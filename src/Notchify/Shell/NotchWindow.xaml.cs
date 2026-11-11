@@ -1,0 +1,1583 @@
+using System.Collections.Specialized;
+using System.ComponentModel;
+using System.IO;
+using System.Runtime.InteropServices;
+using System.Windows;
+using System.Windows.Controls;
+using System.Windows.Controls.Primitives;
+using System.Windows.Input;
+using System.Windows.Interop;
+using System.Windows.Media;
+using System.Windows.Media.Animation;
+using System.Windows.Media.Imaging;
+using System.Windows.Threading;
+using Notchify.Core;
+
+namespace Notchify.Shell;
+
+public enum NotchState { Collapsed, Island, Expanded }
+
+/// <summary>
+/// The notch itself: one transparent, top-most, click-through-where-empty window at the top of the screen.
+/// The pill morphs between three states — collapsed (live activities), island (notifications/HUDs) and
+/// expanded (tabs) — with spring-like size animations.
+/// </summary>
+public partial class NotchWindow : Window, INotchShell
+{
+    private readonly Dictionary<string, FrameworkElement> _views = new();
+    private readonly DispatcherTimer _hoverTimer = new();
+    private readonly DispatcherTimer _collapseTimer = new();
+    private readonly DispatcherTimer _clockTimer = new() { Interval = TimeSpan.FromSeconds(15) };
+    private readonly DispatcherTimer _topmostTimer = new() { Interval = TimeSpan.FromSeconds(4) };
+    private IntPtr _hwnd;
+    private NotchState _state = NotchState.Collapsed;
+    private string _tab = "home";
+    private bool _hiddenForFullscreen;
+    private bool _peeking;
+    private readonly GlassBackdrop _glass = new();
+    private bool _glassActive;
+    private Brush _collapsedBrush = Brushes.Black;
+    private Brush _panelBrush = Brushes.Black;
+    private bool? _pinnedBeforeEdit;
+
+    public NotchWindow()
+    {
+        InitializeComponent();
+        ActivityStrip.ItemsSource = Notch.Hub.Activities;
+
+        _hoverTimer.Tick += (_, _) => { _hoverTimer.Stop(); OnHoverDwell(); };
+        _collapseTimer.Tick += (_, _) => { _collapseTimer.Stop(); TryAutoCollapse(); };
+        _leaveWatch.Tick += LeaveWatch_Tick;
+        _clockTimer.Tick += (_, _) => UpdateHeader();
+        _topmostTimer.Tick += (_, _) => EnsureTopmost();
+
+        Pill.MouseEnter += Pill_MouseEnter;
+        Pill.MouseLeave += Pill_MouseLeave;
+        Pill.MouseLeftButtonUp += Pill_Click;
+        Pill.MouseWheel += Pill_MouseWheel;
+        Pill.DragEnter += Pill_DragEnter;
+        Pill.Drop += Pill_Drop;
+        Pill.SizeChanged += (_, _) => { UpdateClip(); UpdateGlass(); };
+        Pill.ContextMenu = new ContextMenu();
+        Pill.ContextMenuOpening += Pill_ContextMenuOpening;
+        LayoutEditor.Changed += OnLayoutEditChanged;
+        Header.MouseWheel += Header_MouseWheel;
+        Header.SizeChanged += Header_SizeChanged;
+        PreviewKeyDown += OnPreviewKeyDown;
+        Deactivated += (_, _) => { if (_state == NotchState.Expanded && !_dragging && !_scripted && !CursorOverPill() && PinToggle.IsChecked != true) Collapse(); };
+        // Any drag that starts inside the notch (windows between desktops, shelf files, launcher tiles, Home cards…)
+        // keeps it open until the drop: during a drag Windows stops reporting that the mouse is over us.
+        AddHandler(DragDrop.QueryContinueDragEvent, new QueryContinueDragEventHandler(OnQueryContinueDrag), true);
+
+        Notch.Hub.PropertyChanged += Hub_PropertyChanged;
+        Notch.Hub.Activities.CollectionChanged += Activities_CollectionChanged;
+        Notch.Modules.Changed += () => { RebuildTabs(); };
+        Notch.Battery.PropertyChanged += (_, _) => UpdateHeader();
+        Notch.KeepAwake.PropertyChanged += (_, _) => CaffeineToggle.IsChecked = Notch.KeepAwake.IsActive;
+        SettingsStore.Changed += ApplySettings;
+    }
+
+    // ---------------- Window plumbing ----------------
+
+    protected override void OnSourceInitialized(EventArgs e)
+    {
+        base.OnSourceInitialized(e);
+        _hwnd = new WindowInteropHelper(this).Handle;
+        var ex = Native.GetWindowLong(_hwnd, Native.GWL_EXSTYLE);
+        Native.SetWindowLong(_hwnd, Native.GWL_EXSTYLE, ex | Native.WS_EX_TOOLWINDOW); // keep out of Alt+Tab
+        HwndSource.FromHwnd(_hwnd)!.AddHook(WndProc);
+        Native.AddClipboardFormatListener(_hwnd);
+        Notch.Hotkeys.Attach(_hwnd);
+        Notch.Foreground.Start(_hwnd);
+        Notch.Foreground.FullscreenChanged += OnFullscreenChanged;
+
+        ApplySettings();
+        RebuildTabs();
+        UpdateHeader();
+        _clockTimer.Start();
+        _topmostTimer.Start();
+        GoCollapsed(animate: false);
+    }
+
+    private IntPtr WndProc(IntPtr hwnd, int msg, IntPtr wParam, IntPtr lParam, ref bool handled)
+    {
+        switch (msg)
+        {
+            case Native.WM_HOTKEY:
+                handled = Notch.Hotkeys.Handle(wParam.ToInt32());
+                break;
+            case Native.WM_CLIPBOARDUPDATE:
+                Notch.Clipboard.OnClipboardChanged();
+                break;
+            case Native.WM_DEVICECHANGE:
+                Notch.Drives.OnDeviceChange();
+                break;
+            case Native.WM_POWERBROADCAST:
+                Notch.Battery.Refresh();
+                break;
+            case Native.WM_DISPLAYCHANGE:
+            case Native.WM_DPICHANGED when !_positioning:
+                Dispatcher.BeginInvoke(PositionWindow, DispatcherPriority.Background);
+                break;
+            case Native.WM_SETTINGCHANGE when lParam != IntPtr.Zero && Marshal.PtrToStringUni(lParam) == "ImmersiveColorSet":
+                // Windows "Transparency effects" toggled: switch between glass and the solid fallback.
+                Dispatcher.BeginInvoke(ApplySettings, DispatcherPriority.Background);
+                break;
+            case Native.WM_MOUSEHWHEEL when _state == NotchState.Expanded:
+                // Two-finger horizontal swipe on a touchpad switches tabs.
+                var delta = (short)((wParam.ToInt64() >> 16) & 0xFFFF);
+                _hwheelAccum += delta;
+                if (Math.Abs(_hwheelAccum) >= 240) { SwitchTab(_hwheelAccum > 0 ? 1 : -1); _hwheelAccum = 0; }
+                handled = true;
+                break;
+        }
+        return IntPtr.Zero;
+    }
+
+    private int _hwheelAccum;
+    private double _targetW, _targetH;
+    private bool _positioning;
+
+    protected override void OnClosed(EventArgs e)
+    {
+        Native.RemoveClipboardFormatListener(_hwnd);
+        Notch.Foreground.Stop();
+        _glass.Close();
+        base.OnClosed(e);
+    }
+
+    [DllImport("shcore.dll")] private static extern int GetDpiForMonitor(IntPtr hmon, int type, out uint dpiX, out uint dpiY);
+
+    /// <summary>Place the (transparent) window centred at the top of the chosen display.</summary>
+    private void PositionWindow()
+    {
+        if (_hwnd == IntPtr.Zero) return;
+        _positioning = true;
+        try
+        {
+            var a = SettingsStore.Current.Appearance;
+            var screens = System.Windows.Forms.Screen.AllScreens;
+            var screen = a.DisplayIndex >= 0 && a.DisplayIndex < screens.Length ? screens[a.DisplayIndex] : System.Windows.Forms.Screen.PrimaryScreen ?? screens[0];
+            var b = screen.Bounds;
+            var hmon = Native.MonitorFromPoint(new Native.POINT { X = b.Left + b.Width / 2, Y = b.Top + 1 }, Native.MONITOR_DEFAULTTONEAREST);
+            var scale = GetDpiForMonitor(hmon, 0, out var dpi, out _) == 0 ? dpi / 96.0 : 1.0;
+
+            var wDip = Math.Max(a.ExpandedWidth, 460) + 60;
+            // + room for up to three extra rows of wrapped tabs (empty window pixels are click-through).
+            var hDip = Math.Max(a.ExpandedHeight, 180) + a.TopOffset + 40 + 140;
+            var wPx = (int)(wDip * scale);
+            var hPx = (int)(hDip * scale);
+            Native.SetWindowPos(_hwnd, Native.HWND_TOPMOST, b.Left + (b.Width - wPx) / 2, b.Top, wPx, hPx, Native.SWP_NOACTIVATE);
+            Width = wDip;
+            Height = hDip;
+        }
+        finally { _positioning = false; }
+        UpdateGlass();
+    }
+
+    private void EnsureTopmost()
+    {
+        if (_hwnd == IntPtr.Zero || !IsVisible) return;
+        Native.SetWindowPos(_hwnd, Native.HWND_TOPMOST, 0, 0, 0, 0, Native.SWP_NOMOVE | Native.SWP_NOSIZE | Native.SWP_NOACTIVATE);
+        _glass.KeepBelow(_hwnd);
+    }
+
+    private void OnFullscreenChanged(bool fullscreen)
+    {
+        if (!SettingsStore.Current.Behavior.HideInFullscreen) return;
+        _hiddenForFullscreen = fullscreen;
+        PillHost.Visibility = fullscreen && _state != NotchState.Island ? Visibility.Hidden : Visibility.Visible;
+        UpdateGlass();
+    }
+
+    public void ApplySettings()
+    {
+        var s = SettingsStore.Current;
+        var a = s.Appearance;
+        Application.Current.Resources["AccentBrush"] = Ui.Brush(a.AccentColor);
+        Application.Current.Resources["NotchBrush"] = Ui.Brush(a.BackgroundColor);
+        ApplyTabTint(a);
+        Sheen.Opacity = Math.Clamp(a.GlassIntensity, 0, 1);
+        Rim.Opacity = Math.Clamp(a.GlassIntensity, 0, 1);
+        PillHost.Margin = new Thickness(0, a.TopOffset, 0, 0);
+
+        // Fill: the collapsed pill stays a solid notch colour; the open notch and islands get the chosen
+        // background, made translucent over a live blur when glass is on and Windows allows it.
+        _glassActive = a.Glass && GlassBackdrop.SystemAllowsBlur;
+        _collapsedBrush = Ui.Brush(a.BackgroundColor);
+        _panelBrush = BuildPanelBrush(a, _glassActive);
+        BgImage.Source = a.BackgroundType == "Image" && !string.IsNullOrWhiteSpace(a.BackgroundImage) ? Ui.LoadImage(a.BackgroundImage, 1600) : null;
+        BgImage.Opacity = Math.Clamp(a.BackgroundImageOpacity, 0, 1);
+
+        // Text & control size inside the notch.
+        var scale = Math.Clamp(a.UiScale, 0.7, 1.6);
+        Transform zoom = Math.Abs(scale - 1) < 0.01 ? Transform.Identity : new ScaleTransform(scale, scale);
+        CompactLayer.LayoutTransform = zoom;
+        IslandLayer.LayoutTransform = zoom;
+        ExpandedLayer.LayoutTransform = zoom;
+
+        if (_hwnd != IntPtr.Zero)
+        {
+            // The demo tour must stay visible to the screen recorder even when its theme changes re-apply settings.
+            var hide = s.Behavior.HideFromScreenCapture && !_recordingTour;
+            Native.SetWindowDisplayAffinity(_hwnd, hide ? Native.WDA_EXCLUDEFROMCAPTURE : Native.WDA_NONE);
+            _glass.SetExcludedFromCapture(hide);
+        }
+        var tabLook = a.TabLabels + "|" + a.TabOverflow;
+        if (tabLook != _tabLabels)
+        {
+            var first = _tabLabels == null;
+            _tabLabels = tabLook;
+            if (!first) RebuildTabs();
+        }
+        UpdateHeader(); // clock format may have changed
+        PositionWindow();
+        RefreshSize(animate: false);
+        UpdateFill();
+    }
+
+    private string? _tabLabels;
+
+    /// <summary>
+    /// The selected tab's capsule colour and strength. A strong tint would hide text of the same colour,
+    /// so past halfway the name switches to white or black, whichever reads better on it.
+    /// </summary>
+    private static void ApplyTabTint(AppearanceSettings a)
+    {
+        var tint = Ui.Color(string.IsNullOrWhiteSpace(a.TabTintColor) ? a.AccentColor : a.TabTintColor);
+        tint.A = 255;
+        var strength = Math.Clamp(a.TabTintStrength, 0.05, 1);
+        var fill = new SolidColorBrush(Color.FromArgb((byte)Math.Round(strength * 255), tint.R, tint.G, tint.B));
+        fill.Freeze();
+        Color text = tint;
+        if (strength >= 0.5)
+        {
+            var luminance = (0.299 * tint.R + 0.587 * tint.G + 0.114 * tint.B) / 255;
+            text = luminance > 0.6 ? Colors.Black : Colors.White;
+        }
+        var textBrush = new SolidColorBrush(text);
+        textBrush.Freeze();
+        Application.Current.Resources["TabTintFillBrush"] = fill;
+        Application.Current.Resources["TabTintTextBrush"] = textBrush;
+    }
+
+    private static Brush BuildPanelBrush(AppearanceSettings a, bool glass)
+    {
+        Color Tint(string hex)
+        {
+            var c = Ui.Color(hex);
+            return glass ? Color.FromArgb((byte)Math.Round(Math.Clamp(a.TintOpacity, 0, 1) * 255), c.R, c.G, c.B) : c;
+        }
+        Brush brush;
+        if (a.BackgroundType == "Gradient")
+        {
+            var rad = a.GradientAngle * Math.PI / 180;
+            var dx = Math.Cos(rad) / 2;
+            var dy = Math.Sin(rad) / 2;
+            brush = new LinearGradientBrush(Tint(a.BackgroundColor), Tint(a.GradientColor), new Point(0.5 - dx, 0.5 - dy), new Point(0.5 + dx, 0.5 + dy));
+        }
+        else brush = new SolidColorBrush(Tint(a.BackgroundColor));
+        brush.Freeze();
+        return brush;
+    }
+
+    /// <summary>Pick the fill for the current state and show or hide the blur behind it.</summary>
+    private void UpdateFill()
+    {
+        var open = _state != NotchState.Collapsed;
+        Pill.Background = open ? _panelBrush : _collapsedBrush;
+        BgImage.Visibility = open && BgImage.Source != null ? Visibility.Visible : Visibility.Collapsed;
+        UpdateClip();
+        UpdateGlass();
+    }
+
+    private void UpdateGlass()
+    {
+        if (_hwnd == IntPtr.Zero) return;
+        var want = _glassActive && _state != NotchState.Collapsed && PillHost.Visibility == Visibility.Visible && IsVisible;
+        if (want) _glass.Show(_hwnd, Pill, Pill.CornerRadius);
+        else _glass.Hide();
+    }
+
+    // ---------------- State machine ----------------
+
+    public bool IsExpanded => _state == NotchState.Expanded;
+
+    public bool KeepOpen
+    {
+        get => PinToggle.IsChecked == true;
+        set => PinToggle.IsChecked = value;
+    }
+    public IntPtr LastExternalWindow => Notch.Foreground.LastExternal;
+
+    /// <summary>Open on the user's default page (Settings › General › Open on).</summary>
+    public void Expand() => ExpandTo(null);
+
+    private void ExpandTo(string? tab)
+    {
+        if (_state == NotchState.Expanded) return;
+        _peeking = false;
+        _state = NotchState.Expanded;
+        PillHost.Visibility = Visibility.Visible;
+        _tab = tab ?? DefaultTab();
+        ShowTab(_tab);
+        ShowLayer(ExpandedLayer);
+        RefreshSize(animate: true);
+        UpdateHeader();
+        StartLeaveWatch();
+    }
+
+    /// <summary>Which tab the notch opens on: a fixed tab, the last one used, or "smart".</summary>
+    private string DefaultTab()
+    {
+        var b = SettingsStore.Current.Behavior;
+        var visible = Notch.Modules.Tabs.Select(t => t.Id).ToList();
+        string Pick(params string[] ids) => ids.FirstOrDefault(visible.Contains) ?? visible.FirstOrDefault() ?? "home";
+        return b.DefaultTab switch
+        {
+            "last" => Pick(b.LastTab, _tab),
+            "smart" => Notch.Media.IsPlaying ? Pick("music", "home")
+                : Notch.Modules.Get("timer") is Modules.TimerModule { Running: true } ? Pick("timer", "home")
+                : Pick("home"),
+            var id => Pick(id),
+        };
+    }
+
+    public void Collapse()
+    {
+        _collapseTimer.Stop();
+        _leaveWatch.Stop();
+        StopOutsideClickWatch();
+        _peeking = false;
+        LayoutEditor.IsEditing = false;
+        if (Notch.Hub.Current != null) GoIsland(Notch.Hub.Current);
+        else GoCollapsed(animate: true);
+    }
+
+    public void Toggle()
+    {
+        if (_state == NotchState.Expanded) Collapse();
+        else
+        {
+            Expand();
+            Activate();
+        }
+    }
+
+    public void OpenTab(string moduleId)
+    {
+        if (_state != NotchState.Expanded) ExpandTo(moduleId); else ShowTab(moduleId);
+        Activate();
+    }
+
+    private void GoCollapsed(bool animate)
+    {
+        _state = NotchState.Collapsed;
+        ShowLayer(CompactLayer);
+        RefreshSize(animate);
+        if (_hiddenForFullscreen) PillHost.Visibility = Visibility.Hidden;
+    }
+
+    private void GoIsland(Island island)
+    {
+        if (_state == NotchState.Expanded) return; // the open panel wins; island waits its turn
+        _state = NotchState.Island;
+        PillHost.Visibility = Visibility.Visible;
+        IslandLayer.Content = island.CustomContent ?? (object)island;
+        ShowLayer(IslandLayer);
+        RefreshSize(animate: true);
+    }
+
+    private void ShowLayer(UIElement target)
+    {
+        foreach (var layer in new UIElement[] { CompactLayer, IslandLayer, ExpandedLayer })
+        {
+            if (layer == target)
+            {
+                layer.Visibility = Visibility.Visible;
+                Fade(layer, 0, 1, 220, 70);
+            }
+            else layer.Visibility = Visibility.Collapsed;
+        }
+        UpdateFill();
+    }
+
+    /// <summary>Rise into place: a few pixels up while fading in (used when switching tabs).</summary>
+    private static void Rise(UIElement el, double distance, int ms)
+    {
+        if (!SettingsStore.Current.Appearance.AnimationsEnabled) return;
+        var speed = Math.Max(0.25, SettingsStore.Current.Appearance.AnimationSpeed);
+        if (el.RenderTransform is not TranslateTransform t) el.RenderTransform = t = new TranslateTransform();
+        t.BeginAnimation(TranslateTransform.YProperty, new DoubleAnimation(distance, 0, TimeSpan.FromMilliseconds(ms / speed))
+        {
+            EasingFunction = new CubicEase { EasingMode = EasingMode.EaseOut },
+        });
+    }
+
+    private static void Fade(UIElement el, double from, double to, int ms, int delay)
+    {
+        if (!SettingsStore.Current.Appearance.AnimationsEnabled) { el.Opacity = to; return; }
+        var speed = Math.Max(0.25, SettingsStore.Current.Appearance.AnimationSpeed);
+        el.BeginAnimation(OpacityProperty, new DoubleAnimation(from, to, TimeSpan.FromMilliseconds(ms / speed))
+        {
+            BeginTime = TimeSpan.FromMilliseconds(delay / speed),
+            EasingFunction = new CubicEase { EasingMode = EasingMode.EaseOut },
+        });
+    }
+
+    /// <summary>Recompute the pill's target size for the current state and animate to it.</summary>
+    private void RefreshSize(bool animate)
+    {
+        var a = SettingsStore.Current.Appearance;
+        double w, h;
+        switch (_state)
+        {
+            case NotchState.Expanded:
+                w = a.ExpandedWidth;
+                h = a.ExpandedHeight + _headerExtra;
+                break;
+            case NotchState.Island:
+                w = Math.Max(a.CollapsedWidth + 120, 380) * (IslandLayer.Content is Island { Progress: not null } ? SettingsStore.Current.Huds.HudScale : 1);
+                IslandLayer.Measure(new Size(w, double.PositiveInfinity));
+                h = Math.Max(a.CollapsedHeight + 20, IslandLayer.DesiredSize.Height);
+                if (IslandLayer.Content is FrameworkElement custom)
+                {
+                    custom.Measure(new Size(double.PositiveInfinity, double.PositiveInfinity));
+                    w = Math.Max(w, custom.DesiredSize.Width);
+                    h = Math.Max(h, custom.DesiredSize.Height);
+                }
+                break;
+            default:
+                ActivityStrip.Measure(new Size(double.PositiveInfinity, double.PositiveInfinity));
+                var content = ActivityStrip.DesiredSize.Width + 28;
+                w = Math.Max(a.CollapsedWidth, content);
+                h = a.CollapsedHeight;
+                break;
+        }
+        w = Math.Min(w, Width - 20);
+        // Ignore sub-pixel jitter from ticking timers so the pill doesn't wobble every second.
+        if (animate && _state == NotchState.Collapsed && Math.Abs(w - _targetW) < 6 && Math.Abs(h - _targetH) < 1) return;
+        _targetW = w;
+        _targetH = h;
+
+        var radius = _state == NotchState.Collapsed ? Math.Min(a.CornerRadius, h / 2) : a.CornerRadius + 8;
+        Pill.CornerRadius = a.Style == "Pill" ? new CornerRadius(radius) : new CornerRadius(0, 0, radius, radius);
+        UpdateClip();
+        UpdateGlass();
+
+        if (!animate || !a.AnimationsEnabled)
+        {
+            Pill.BeginAnimation(WidthProperty, null);
+            Pill.BeginAnimation(HeightProperty, null);
+            Pill.Width = w; Pill.Height = h;
+            return;
+        }
+        var speed = Math.Max(0.25, a.AnimationSpeed);
+        var growing = h > Pill.ActualHeight + 1;
+        IEasingFunction ease = growing
+            ? new BackEase { Amplitude = 0.28, EasingMode = EasingMode.EaseOut } // a little overshoot feels springy
+            : new CubicEase { EasingMode = EasingMode.EaseOut };
+        var dur = TimeSpan.FromMilliseconds((growing ? 420 : 300) / speed);
+        Pill.BeginAnimation(WidthProperty, new DoubleAnimation(w, dur) { EasingFunction = ease });
+        Pill.BeginAnimation(HeightProperty, new DoubleAnimation(h, dur) { EasingFunction = ease });
+    }
+
+    private void UpdateClip()
+    {
+        var w = Pill.ActualWidth; var h = Pill.ActualHeight;
+        if (w <= 0 || h <= 0) return;
+        var r = Pill.CornerRadius;
+        var geo = new StreamGeometry();
+        using (var ctx = geo.Open())
+        {
+            double tl = Math.Min(r.TopLeft, h / 2), tr = Math.Min(r.TopRight, h / 2), br = Math.Min(r.BottomRight, h / 2), bl = Math.Min(r.BottomLeft, h / 2);
+            ctx.BeginFigure(new Point(tl, 0), true, true);
+            ctx.LineTo(new Point(w - tr, 0), false, false);
+            if (tr > 0) ctx.ArcTo(new Point(w, tr), new Size(tr, tr), 0, false, SweepDirection.Clockwise, false, false);
+            ctx.LineTo(new Point(w, h - br), false, false);
+            if (br > 0) ctx.ArcTo(new Point(w - br, h), new Size(br, br), 0, false, SweepDirection.Clockwise, false, false);
+            ctx.LineTo(new Point(bl, h), false, false);
+            if (bl > 0) ctx.ArcTo(new Point(0, h - bl), new Size(bl, bl), 0, false, SweepDirection.Clockwise, false, false);
+            ctx.LineTo(new Point(0, tl), false, false);
+            if (tl > 0) ctx.ArcTo(new Point(tl, 0), new Size(tl, tl), 0, false, SweepDirection.Clockwise, false, false);
+        }
+        geo.Freeze();
+        PillContent.Clip = geo;
+        // Over glass the shadow must stay outside the pill, or it darkens the frosted area.
+        ShadowHost.Clip = _glassActive && _state != NotchState.Collapsed
+            ? new CombinedGeometry(GeometryCombineMode.Exclude, new RectangleGeometry(new Rect(-80, -80, w + 160, h + 160)), geo)
+            : null;
+    }
+
+    // ---------------- Islands & activities ----------------
+
+    private void Hub_PropertyChanged(object? sender, PropertyChangedEventArgs e)
+    {
+        if (e.PropertyName != nameof(ActivityHub.Current)) return;
+        var island = Notch.Hub.Current;
+        if (island != null) GoIsland(island);
+        else if (_state == NotchState.Island) GoCollapsed(animate: true);
+    }
+
+    private void Activities_CollectionChanged(object? sender, NotifyCollectionChangedEventArgs e)
+    {
+        if (e.NewItems != null)
+            foreach (LiveActivity a in e.NewItems)
+                a.PropertyChanged += (_, pe) =>
+                {
+                    if (pe.PropertyName is nameof(LiveActivity.Text) or nameof(LiveActivity.HasImage) or nameof(LiveActivity.HasProgress))
+                        NotifyActivityLayoutChanged();
+                };
+        if (_state == NotchState.Collapsed)
+            Dispatcher.BeginInvoke(() => RefreshSize(animate: true), DispatcherPriority.Loaded);
+    }
+
+    /// <summary>Activities update their text in place; re-measure the pill now and then.</summary>
+    public void NotifyActivityLayoutChanged()
+    {
+        if (_state == NotchState.Collapsed) RefreshSize(animate: true);
+    }
+
+    private void Activity_Click(object sender, MouseButtonEventArgs e)
+    {
+        if ((sender as FrameworkElement)?.Tag is LiveActivity { OpenTab: { } tab })
+        {
+            OpenTab(tab);
+            e.Handled = true;
+        }
+    }
+
+    private void IslandAction_Click(object sender, RoutedEventArgs e)
+    {
+        if ((sender as FrameworkElement)?.Tag is not IslandAction action) return;
+        var island = Notch.Hub.Current;
+        try { action.Run(); }
+        catch (Exception ex) { Log.Error("island action", ex); }
+        if (island != null && Notch.Hub.Current == island) Notch.Hub.Dismiss(island);
+        e.Handled = true;
+    }
+
+    private void IslandImage_MouseMove(object sender, MouseEventArgs e)
+    {
+        if (e.LeftButton != MouseButtonState.Pressed) return;
+        if ((sender as FrameworkElement)?.Tag is Island { DragFiles: { Length: > 0 } files })
+        {
+            Notch.Hub.HoldCurrent = true;
+            DragDrop.DoDragDrop((DependencyObject)sender, new DataObject(DataFormats.FileDrop, files), DragDropEffects.Copy | DragDropEffects.Move);
+            Notch.Hub.HoldCurrent = false;
+        }
+    }
+
+    // ---------------- Mouse & gestures ----------------
+
+    private void Pill_MouseEnter(object sender, MouseEventArgs e)
+    {
+        _collapseTimer.Stop();
+        if (_state == NotchState.Island) Notch.Hub.HoldCurrent = true;
+        var b = SettingsStore.Current.Behavior;
+        if ((b.HoverToOpen || b.PeekOnHover) && _state != NotchState.Expanded)
+        {
+            _hoverTimer.Interval = TimeSpan.FromMilliseconds(Math.Max(0, b.HoverDelayMs));
+            _hoverTimer.Start();
+        }
+    }
+
+    private void OnHoverDwell()
+    {
+        if (!Pill.IsMouseOver || _state == NotchState.Expanded) return;
+        var b = SettingsStore.Current.Behavior;
+        if (b.PeekOnHover && _state == NotchState.Collapsed && Notch.Media.HasSession && PeekFactory != null)
+        {
+            // Minimal now-playing peek: transport controls without opening the panel.
+            _peeking = true;
+            Notch.Hub.Show(new Island { Key = "peek", CustomContent = PeekFactory(), Sticky = true, Priority = IslandPriority.Low });
+            return;
+        }
+        if (b.HoverToOpen && _state == NotchState.Collapsed) Expand();
+    }
+
+    /// <summary>Supplied by the Now Playing module.</summary>
+    public static Func<FrameworkElement>? PeekFactory { get; set; }
+
+    private void Pill_MouseLeave(object sender, MouseEventArgs e)
+    {
+        _hoverTimer.Stop();
+        if (_state == NotchState.Island) Notch.Hub.HoldCurrent = false;
+        if (_peeking) { _peeking = false; Notch.Hub.DismissByKey("peek"); }
+        var b = SettingsStore.Current.Behavior;
+        if (_state == NotchState.Expanded && b.AutoCollapse && PinToggle.IsChecked != true && !_dragging)
+        {
+            _collapseTimer.Interval = TimeSpan.FromMilliseconds(Math.Max(100, b.AutoCollapseDelayMs));
+            _collapseTimer.Start();
+        }
+    }
+
+    private bool _dragging;
+
+    private void OnQueryContinueDrag(object sender, QueryContinueDragEventArgs e)
+    {
+        var ending = e.EscapePressed || (e.KeyStates & DragDropKeyStates.LeftMouseButton) == 0;
+        if (!ending)
+        {
+            if (!_dragging) { _dragging = true; _collapseTimer.Stop(); }
+            return;
+        }
+        if (!_dragging) return;
+        _dragging = false;
+        // Dropped: give a moment to start the next drag before closing (at least a second).
+        var b = SettingsStore.Current.Behavior;
+        if (_state == NotchState.Expanded && b.AutoCollapse && PinToggle.IsChecked != true)
+        {
+            _collapseTimer.Interval = TimeSpan.FromMilliseconds(Math.Max(1000, b.AutoCollapseDelayMs));
+            _collapseTimer.Start();
+        }
+    }
+
+    /// <summary>
+    /// Mouse over the pill, checked against the real cursor position: WPF's IsMouseOver goes stale during and
+    /// right after drag and drop.
+    /// </summary>
+    private bool CursorOverPill()
+    {
+        // The real cursor position wins: IsMouseOver can stay "true" after a drag or a programmatic open,
+        // when Windows never tells us the mouse left.
+        if (!Pill.IsVisible || !Native.GetCursorPos(out var p)) return Pill.IsMouseOver;
+        try
+        {
+            var topLeft = Pill.PointToScreen(new Point(0, 0));
+            var bottomRight = Pill.PointToScreen(new Point(Pill.ActualWidth, Pill.ActualHeight));
+            return p.X >= topLeft.X && p.X <= bottomRight.X && p.Y >= topLeft.Y && p.Y <= bottomRight.Y;
+        }
+        catch { return Pill.IsMouseOver; }
+    }
+
+    // ---------------- Leave watchdog ----------------
+    // MouseLeave doesn't always arrive (after drag and drop, or when the notch was opened by a shortcut,
+    // Settings preview or an island without the mouse ever being over it). While open, check the real
+    // cursor a few times a second and close once it has been away for the auto-collapse delay.
+
+    private readonly DispatcherTimer _leaveWatch = new() { Interval = TimeSpan.FromMilliseconds(300) };
+    private DateTime? _awaySince;
+    private bool _seenInside;
+
+    private void StartLeaveWatch()
+    {
+        _awaySince = null;
+        _seenInside = CursorOverPill();
+        _leaveWatch.Start();
+        StartOutsideClickWatch();
+    }
+
+    /// <summary>
+    /// Something inside really has the mouse (a slider or scrollbar being dragged). WPF can leave Mouse.Captured
+    /// set after the button is released, which used to keep the notch open for good.
+    /// </summary>
+    private static bool MouseHeld() =>
+        Mouse.Captured != null && ((Native.GetAsyncKeyState(0x01) & 0x8000) != 0 || (Native.GetAsyncKeyState(0x02) & 0x8000) != 0);
+
+    private void LeaveWatch_Tick(object? sender, EventArgs e)
+    {
+        if (_state != NotchState.Expanded) { _leaveWatch.Stop(); StopOutsideClickWatch(); return; }
+        var b = SettingsStore.Current.Behavior;
+        var holding = !b.AutoCollapse || PinToggle.IsChecked == true || _scripted || LayoutEditor.IsEditing || _dragging
+            || MouseHeld() || (IsActive && Keyboard.FocusedElement is TextBox);
+        if (holding || CursorOverPill())
+        {
+            if (!holding) _seenInside = true;
+            _awaySince = null;
+            return;
+        }
+        _awaySince ??= DateTime.Now;
+        // Opened without the mouse (shortcut, Settings preview): give a few seconds to look before closing.
+        var wait = TimeSpan.FromMilliseconds(_seenInside ? Math.Max(100, b.AutoCollapseDelayMs) : Math.Max(3000, b.AutoCollapseDelayMs));
+        if (DateTime.Now - _awaySince >= wait) Collapse();
+    }
+
+    private void TryAutoCollapse()
+    {
+        if (_dragging || _scripted || CursorOverPill() || _state != NotchState.Expanded) return;
+        // Don't yank the panel away while the user is typing in it or a popup (combo box) is open.
+        if (IsActive && Keyboard.FocusedElement is TextBox) return;
+        if (MouseHeld()) return;
+        Collapse();
+    }
+
+    // ---------------- Click outside to close ----------------
+    // While open, a low-level mouse hook watches for a click anywhere else on screen and closes the notch,
+    // whatever the hover logic thinks. Clicks on Notch's own pop-ups (menus, drop-downs, Settings) don't count.
+
+    private IntPtr _clickHook;
+    private Native.HookProc? _clickProc;
+
+    private void StartOutsideClickWatch()
+    {
+        if (_clickHook != IntPtr.Zero) return;
+        _clickProc = OutsideClickProc;
+        _clickHook = Native.SetWindowsHookEx(Native.WH_MOUSE_LL, _clickProc, Native.GetModuleHandle(null), 0);
+    }
+
+    private void StopOutsideClickWatch()
+    {
+        if (_clickHook == IntPtr.Zero) return;
+        Native.UnhookWindowsHookEx(_clickHook);
+        _clickHook = IntPtr.Zero;
+    }
+
+    private IntPtr OutsideClickProc(int code, IntPtr wParam, IntPtr lParam)
+    {
+        // Runs for every mouse event system-wide: only note button presses and get out.
+        if (code >= 0 && (int)wParam is Native.WM_LBUTTONDOWN or Native.WM_RBUTTONDOWN or 0x0207 /* middle */)
+        {
+            var pt = System.Runtime.InteropServices.Marshal.PtrToStructure<Native.MSLLHOOKSTRUCT>(lParam).pt;
+            Dispatcher.BeginInvoke(() => OnClickAnywhere(pt));
+        }
+        return Native.CallNextHookEx(_clickHook, code, wParam, lParam);
+    }
+
+    private void OnClickAnywhere(Native.POINT pt)
+    {
+        if (_state != NotchState.Expanded) { StopOutsideClickWatch(); return; }
+        if (PinToggle.IsChecked == true || _scripted || _dragging) return;
+        try
+        {
+            var topLeft = Pill.PointToScreen(new Point(0, 0));
+            var bottomRight = Pill.PointToScreen(new Point(Pill.ActualWidth, Pill.ActualHeight));
+            if (pt.X >= topLeft.X && pt.X <= bottomRight.X && pt.Y >= topLeft.Y && pt.Y <= bottomRight.Y) return;
+        }
+        catch { return; }
+        // One of our own windows (a menu, a drop-down list, Settings, the palette): not "outside".
+        var hit = Native.WindowFromPoint(pt);
+        if (hit != IntPtr.Zero && Native.GetWindowThreadProcessId(hit, out var pid) != 0 && pid == (uint)Environment.ProcessId) return;
+        Collapse();
+    }
+
+    private void Pill_Click(object sender, MouseButtonEventArgs e)
+    {
+        if (e.Handled) return;
+        switch (_state)
+        {
+            case NotchState.Collapsed:
+                Expand();
+                Activate();
+                break;
+            case NotchState.Island when Notch.Hub.Current is { } island:
+                if (_peeking) { _peeking = false; Notch.Hub.Dismiss(island); Expand(); Activate(); break; }
+                if (island.HasActions) break; // let the buttons do the work
+                Notch.Hub.Dismiss(island);
+                if (island.OpenTab != null) OpenTab(island.OpenTab); else { Expand(); Activate(); }
+                break;
+        }
+    }
+
+    private void Pill_MouseWheel(object sender, MouseWheelEventArgs e)
+    {
+        if (_state == NotchState.Expanded) return; // let content scroll
+        if (SettingsStore.Current.Behavior.ScrollOnPillChangesVolume)
+        {
+            Notch.Audio.Step(e.Delta > 0 ? 0.02 : -0.02);
+            e.Handled = true;
+        }
+    }
+
+    private void Header_MouseWheel(object sender, MouseWheelEventArgs e)
+    {
+        if (LayoutEditor.IsEditing) return; // every chip is on screen (they wrap); nothing to scroll
+        if (!SettingsStore.Current.Behavior.ScrollToSwitchTabs) return;
+        SwitchTab(e.Delta < 0 ? 1 : -1);
+        e.Handled = true;
+    }
+
+    private void Pill_DragEnter(object sender, DragEventArgs e)
+    {
+        if (!e.Data.GetDataPresent(DataFormats.FileDrop)) return;
+        if (_state != NotchState.Expanded || (_tab != "shelf" && _tab != "launcher" && _tab != "documents")) OpenTab("shelf");
+        e.Effects = DragDropEffects.Copy;
+    }
+
+    private void Pill_Drop(object sender, DragEventArgs e)
+    {
+        if (e.Handled) return;
+        if (e.Data.GetData(DataFormats.FileDrop) is string[] files)
+        {
+            Notch.Shelf.Add(files);
+            OpenTab("shelf");
+            e.Handled = true;
+        }
+    }
+
+    private void OnPreviewKeyDown(object sender, KeyEventArgs e)
+    {
+        if (e.Key == Key.Escape) { Collapse(); e.Handled = true; return; }
+        if (Keyboard.Modifiers == ModifierKeys.Control && e.Key is >= Key.D1 and <= Key.D9)
+        {
+            var tabs = Notch.Modules.Tabs.ToList();
+            var i = e.Key - Key.D1;
+            if (i < tabs.Count) ShowTab(tabs[i].Id);
+            e.Handled = true;
+        }
+        else if (Keyboard.Modifiers == ModifierKeys.Control && e.Key == Key.Tab)
+        {
+            SwitchTab(1);
+            e.Handled = true;
+        }
+    }
+
+    // ---------------- Tabs ----------------
+
+    private readonly List<(RadioButton Button, NotchModule Module)> _tabButtons = new();
+    private RadioButton? _moreButton;
+    private List<NotchModule> _overflow = new();
+
+    private void RebuildTabs()
+    {
+        TabStrip.Children.Clear();
+        _tabButtons.Clear();
+        _moreButton = null;
+        _overflow.Clear();
+        var appearance = SettingsStore.Current.Appearance;
+        var labels = appearance.TabLabels;
+        var withLabels = labels != "Never";
+        _rowHeight = withLabels ? 44 : 32;
+        HeaderRight.Height = _rowHeight;
+        Header.MinHeight = _rowHeight;
+        // One fixed row with "More ▾", or as many rows as the tabs need (always while editing, so every tab can be arranged).
+        var wrap = LayoutEditor.IsEditing || appearance.TabOverflow != "Menu";
+        Header.Height = wrap ? double.NaN : _rowHeight;
+        // Edit-layout chips are shorter than the Add card / Done buttons: keep the rows beside those clear too.
+        TabStrip.ReserveHeight = LayoutEditor.IsEditing ? HeaderRight.ActualHeight : 0;
+        if (LayoutEditor.IsEditing) { BuildEditableTabs(); return; }
+        var index = 1;
+        foreach (var m in Notch.Modules.Tabs)
+        {
+            var id = m.Id;
+            var rb = new RadioButton
+            {
+                Style = (Style)FindResource("TabButton"),
+                GroupName = "tabs",
+                Tag = id,
+                ToolTip = index <= 9 ? $"{m.Title}  (Ctrl+{index})" : m.Title,
+                IsChecked = id == _tab,
+            };
+            SetTabContent(rb, m.Glyph, m.ShortTitle, labels, rb);
+            rb.Checked += (_, _) => ShowTab(id);
+            TabStrip.Children.Add(rb);
+            _tabButtons.Add((rb, m));
+            index++;
+        }
+
+        // Tabs that don't fit go into "More ▾" at the end of the row.
+        _moreButton = new RadioButton { Style = (Style)FindResource("TabButton"), Visibility = Visibility.Collapsed, ToolTip = "More tabs" };
+        _moreButton.PreviewMouseLeftButtonDown += (_, e) => { e.Handled = true; OpenMoreMenu(); };
+        TabStrip.Children.Add(_moreButton);
+
+        if (Notch.Modules.Tabs.All(t => t.Id != _tab)) _tab = Notch.Modules.Tabs.FirstOrDefault()?.Id ?? "home";
+        foreach (var stale in _views.Keys.Where(k => Notch.Modules.Tabs.All(t => t.Id != k)).ToList()) _views.Remove(stale);
+        if (_state == NotchState.Expanded) ShowTab(_tab);
+        Dispatcher.BeginInvoke(LayoutTabs, System.Windows.Threading.DispatcherPriority.Loaded);
+    }
+
+    /// <summary>Icon, with the name underneath unless labels are off ("Selected" = only while <paramref name="checkedSource"/> is on).</summary>
+    private static void SetTabContent(RadioButton rb, string glyph, string label, string labels, RadioButton checkedSource)
+    {
+        if (labels == "Never")
+        {
+            rb.Content = glyph;
+            return;
+        }
+        var text = new TextBlock
+        {
+            Text = label,
+            FontFamily = new FontFamily("Segoe UI Variable Text, Segoe UI"),
+            FontSize = 9.5,
+            HorizontalAlignment = HorizontalAlignment.Center,
+            TextTrimming = TextTrimming.CharacterEllipsis,
+            MaxWidth = 64,
+            Margin = new Thickness(0, 1, 0, 0),
+        };
+        if (labels == "Selected")
+            text.SetBinding(VisibilityProperty, new System.Windows.Data.Binding(nameof(RadioButton.IsChecked))
+                { Source = checkedSource, Converter = Notchify.Controls.Converters.Visible });
+        rb.Content = new StackPanel
+        {
+            Children =
+            {
+                new TextBlock { Text = glyph, FontSize = 14, HorizontalAlignment = HorizontalAlignment.Center },
+                text,
+            },
+        };
+        rb.Width = double.NaN;
+        rb.MinWidth = 40;
+        rb.Height = 40;
+        rb.Padding = new Thickness(6, 0, 6, 0);
+    }
+
+    private void TabScroller_SizeChanged(object sender, SizeChangedEventArgs e)
+    {
+        if (e.WidthChanged) LayoutTabs();
+    }
+
+    /// <summary>The first row of tabs stops where the clock and buttons start.</summary>
+    private void HeaderRight_SizeChanged(object sender, SizeChangedEventArgs e)
+    {
+        TabStrip.FirstRowReserve = HeaderRight.ActualWidth + HeaderRight.Margin.Left;
+        TabStrip.ReserveHeight = LayoutEditor.IsEditing ? HeaderRight.ActualHeight : 0;
+        if (e.WidthChanged) LayoutTabs();
+    }
+
+    private double _rowHeight = 44;
+    private double _headerExtra;
+
+    /// <summary>When the tabs wrap onto more rows, grow the open notch by that much so the page keeps its space.</summary>
+    private void Header_SizeChanged(object sender, SizeChangedEventArgs e)
+    {
+        if (!e.HeightChanged) return;
+        var extra = Math.Max(0, Header.ActualHeight - _rowHeight);
+        if (Math.Abs(extra - _headerExtra) < 0.5) return;
+        _headerExtra = extra;
+        if (_state == NotchState.Expanded) RefreshSize(animate: true);
+    }
+
+    /// <summary>Show as many tabs as fit beside the clock; the rest move into the "More" menu (or wrap, if that's the setting).</summary>
+    private void LayoutTabs()
+    {
+        if (LayoutEditor.IsEditing || _moreButton == null || _tabButtons.Count == 0) return;
+        if (SettingsStore.Current.Appearance.TabOverflow != "Menu")
+        {
+            foreach (var (rb, _) in _tabButtons) rb.Visibility = Visibility.Visible;
+            _overflow.Clear();
+            _moreButton.Visibility = Visibility.Collapsed;
+            return;
+        }
+        // A couple of pixels' slack so rounding never pushes the last tab onto a second row.
+        var available = TabScroller.ActualWidth - TabStrip.FirstRowReserve - 2;
+        if (available <= 0) return;
+
+        var infinite = new Size(double.PositiveInfinity, double.PositiveInfinity);
+        var widths = new List<double>();
+        foreach (var (rb, _) in _tabButtons)
+        {
+            rb.Visibility = Visibility.Visible;
+            rb.Measure(infinite);
+            widths.Add(rb.DesiredSize.Width + rb.Margin.Left + rb.Margin.Right);
+        }
+        var fit = _tabButtons.Count;
+        if (widths.Sum() > available)
+        {
+            // Leave room for the More button, sized for its widest look (it shows the open tab's name when that's hidden).
+            var room = available - MoreButtonWidth;
+            fit = 0;
+            var used = 0.0;
+            while (fit < _tabButtons.Count && used + widths[fit] <= room) used += widths[fit++];
+        }
+        for (var i = 0; i < _tabButtons.Count; i++)
+            _tabButtons[i].Button.Visibility = i < fit ? Visibility.Visible : Visibility.Collapsed;
+        _overflow = _tabButtons.Skip(fit).Select(t => t.Module).ToList();
+        _moreButton.Visibility = _overflow.Count > 0 ? Visibility.Visible : Visibility.Collapsed;
+        UpdateMoreButton();
+    }
+
+    private double MoreButtonWidth => SettingsStore.Current.Appearance.TabLabels == "Never" ? 34 : 70;
+
+    /// <summary>"More ▾", or the open tab's icon and name when it's one of the hidden ones.</summary>
+    private void UpdateMoreButton()
+    {
+        if (_moreButton == null) return;
+        var current = _overflow.FirstOrDefault(m => m.Id == _tab);
+        var labels = SettingsStore.Current.Appearance.TabLabels;
+        _moreButton.IsChecked = current != null;
+        // Labels on "Selected" would only show when checked; the More button always names itself.
+        SetTabContent(_moreButton, current?.Glyph ?? Glyphs.More, (current?.ShortTitle ?? "More") + " ▾", labels == "Never" ? "Never" : "Always", _moreButton);
+        _moreButton.Width = labels == "Never" ? 34 : double.NaN;
+        _moreButton.MaxWidth = MoreButtonWidth;
+        _moreButton.ToolTip = current != null ? $"{current.Title} — more tabs" : $"{_overflow.Count} more tab{(_overflow.Count == 1 ? "" : "s")}";
+    }
+
+    private void OpenMoreMenu()
+    {
+        if (_moreButton == null || _overflow.Count == 0) return;
+        var menu = new ContextMenu { PlacementTarget = _moreButton, Placement = System.Windows.Controls.Primitives.PlacementMode.Bottom };
+        foreach (var m in _overflow)
+        {
+            var id = m.Id;
+            var item = new MenuItem
+            {
+                Header = m.Title,
+                Icon = new TextBlock { Text = m.Glyph, Style = (Style)FindResource("Icon"), FontSize = 13 },
+                IsChecked = id == _tab,
+            };
+            item.Click += (_, _) => ShowTab(id);
+            menu.Items.Add(item);
+        }
+        menu.IsOpen = true;
+    }
+
+    /// <summary>Edit-layout tab strip: every tab as a chip you can drag to reorder, with an eye to show/hide it.</summary>
+    private void BuildEditableTabs()
+    {
+        const string format = "notchify/tab";
+        foreach (var m in Notch.Modules.TabCandidates)
+        {
+            var id = m.Id;
+            var visible = Notch.Modules.IsTabVisible(id);
+            var eye = new Button { Style = (Style)FindResource("IconButton"), Width = 22, Height = 22, FontSize = 11,
+                Content = visible ? Glyphs.View : Glyphs.Hide, ToolTip = visible ? $"Hide the {m.Title} tab" : $"Show the {m.Title} tab" };
+            eye.Click += (_, e) => { Notch.Modules.SetTabVisible(id, !visible); e.Handled = true; };
+            var chip = new Border
+            {
+                CornerRadius = new CornerRadius(9),
+                Padding = new Thickness(6, 1, 1, 1),
+                Margin = new Thickness(0, 3, 4, 3),
+                Background = (Brush)FindResource(id == _tab ? "CardHoverBrush" : "CardBrush"),
+                BorderBrush = (Brush)FindResource("DividerBrush"),
+                BorderThickness = new Thickness(1),
+                Opacity = visible ? 1 : 0.45,
+                Cursor = Cursors.SizeAll,
+                AllowDrop = true,
+                ToolTip = $"{m.Title} — drag to move",
+                Child = new StackPanel
+                {
+                    Orientation = Orientation.Horizontal,
+                    Children =
+                    {
+                        new TextBlock { Text = m.Glyph, Style = (Style)FindResource("Icon"), Margin = new Thickness(0, 0, 5, 0) },
+                        new TextBlock { Text = m.ShortTitle, Style = (Style)FindResource("Caption"), Foreground = (Brush)FindResource("TextBrush"),
+                            VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(0, 0, 2, 0) },
+                        eye,
+                    },
+                },
+            };
+            Point? pressed = null;
+            chip.PreviewMouseLeftButtonDown += (_, e) => pressed = e.GetPosition(chip);
+            chip.PreviewMouseLeftButtonUp += (_, _) =>
+            {
+                if (pressed != null && visible) ShowTab(id);
+                pressed = null;
+            };
+            chip.PreviewMouseMove += (_, e) =>
+            {
+                if (e.LeftButton != MouseButtonState.Pressed || pressed is not { } start) return;
+                var d = e.GetPosition(chip) - start;
+                if (Math.Abs(d.X) < SystemParameters.MinimumHorizontalDragDistance && Math.Abs(d.Y) < SystemParameters.MinimumVerticalDragDistance) return;
+                pressed = null;
+                DragDrop.DoDragDrop(chip, new DataObject(format, id), DragDropEffects.Move);
+            };
+            chip.DragOver += (_, e) => { e.Effects = e.Data.GetDataPresent(format) ? DragDropEffects.Move : DragDropEffects.None; e.Handled = true; };
+            chip.Drop += (_, e) =>
+            {
+                if (e.Data.GetData(format) is string dragged) Dispatcher.BeginInvoke(() => Notch.Modules.MoveTo(dragged, id));
+                e.Handled = true;
+            };
+            TabStrip.Children.Add(chip);
+        }
+    }
+
+    private void Edit_Click(object sender, RoutedEventArgs e) => LayoutEditor.Toggle();
+
+    private void AddCard_Click(object sender, RoutedEventArgs e) => LayoutEditor.RequestAddCard();
+
+    private void UpdateEditButtons()
+    {
+        AddCardButton.Visibility = LayoutEditor.IsEditing && _tab == "home" ? Visibility.Visible : Visibility.Collapsed;
+    }
+
+    private void OnLayoutEditChanged()
+    {
+        var editing = LayoutEditor.IsEditing;
+        EditToggle.IsChecked = editing;
+        DoneButton.Visibility = editing ? Visibility.Visible : Visibility.Collapsed;
+        // Stay open while editing; restore the user's own "keep open" choice afterwards.
+        if (editing) { _pinnedBeforeEdit ??= PinToggle.IsChecked == true; PinToggle.IsChecked = true; }
+        else if (_pinnedBeforeEdit is { } was) { PinToggle.IsChecked = was; _pinnedBeforeEdit = null; }
+        RebuildTabs();
+        UpdateEditButtons();
+        ShowResizeHandles(editing);
+    }
+
+    // ---------------- Resize the open panel (edit layout) ----------------
+    // Drag the sides, bottom or bottom corners. The notch stays centred, so a side moves both sides at once.
+
+    private Grid? _resizeHandles;
+
+    private void ShowResizeHandles(bool show)
+    {
+        if (show && _resizeHandles == null && ExpandedLayer.Parent is Grid host)
+        {
+            _resizeHandles = new Grid { Visibility = Visibility.Collapsed };
+            Panel.SetZIndex(_resizeHandles, 10);
+            _resizeHandles.Children.Add(Handle(HorizontalAlignment.Right, VerticalAlignment.Stretch, 8, double.NaN, Cursors.SizeWE, 2, 0, "Drag to make the panel wider or narrower"));
+            _resizeHandles.Children.Add(Handle(HorizontalAlignment.Left, VerticalAlignment.Stretch, 8, double.NaN, Cursors.SizeWE, -2, 0, "Drag to make the panel wider or narrower"));
+            _resizeHandles.Children.Add(Handle(HorizontalAlignment.Stretch, VerticalAlignment.Bottom, double.NaN, 8, Cursors.SizeNS, 0, 1, "Drag to make the panel taller or shorter"));
+            _resizeHandles.Children.Add(Handle(HorizontalAlignment.Right, VerticalAlignment.Bottom, 18, 18, Cursors.SizeNWSE, 2, 1, "Drag to resize the panel"));
+            _resizeHandles.Children.Add(Handle(HorizontalAlignment.Left, VerticalAlignment.Bottom, 18, 18, Cursors.SizeNESW, -2, 1, "Drag to resize the panel"));
+            // A visible grip, so it's obvious the panel can be resized.
+            var grip = Handle(HorizontalAlignment.Center, VerticalAlignment.Bottom, 56, 14, Cursors.SizeNS, 0, 1, "Drag to make the panel taller or shorter");
+            grip.Template = GripTemplate();
+            _resizeHandles.Children.Add(grip);
+            host.Children.Add(_resizeHandles);
+        }
+        if (_resizeHandles != null) _resizeHandles.Visibility = show ? Visibility.Visible : Visibility.Collapsed;
+    }
+
+    /// <param name="dw">Width change per pixel dragged across (2 = both sides move, as the notch stays centred).</param>
+    /// <param name="dh">Height change per pixel dragged down.</param>
+    private System.Windows.Controls.Primitives.Thumb Handle(HorizontalAlignment h, VerticalAlignment v, double width, double height, Cursor cursor, double dw, double dh, string tip)
+    {
+        var thumb = new System.Windows.Controls.Primitives.Thumb
+        {
+            HorizontalAlignment = h,
+            VerticalAlignment = v,
+            Width = width,
+            Height = height,
+            Cursor = cursor,
+            ToolTip = tip,
+            Template = (ControlTemplate)System.Windows.Markup.XamlReader.Parse(
+                "<ControlTemplate xmlns='http://schemas.microsoft.com/winfx/2006/xaml/presentation' TargetType='Thumb'><Border Background='Transparent' /></ControlTemplate>"),
+        };
+        thumb.DragDelta += (_, e) => ResizePanel(e.HorizontalChange * dw, e.VerticalChange * dh);
+        thumb.DragCompleted += (_, _) => SettingsStore.NotifyChanged(); // save, and let Settings' sliders catch up
+        return thumb;
+    }
+
+    private static ControlTemplate GripTemplate() => (ControlTemplate)System.Windows.Markup.XamlReader.Parse(
+        "<ControlTemplate xmlns='http://schemas.microsoft.com/winfx/2006/xaml/presentation' TargetType='Thumb'>" +
+        "<Border Background='Transparent'><Border Width='40' Height='4' CornerRadius='2' Background='{DynamicResource AccentBrush}' VerticalAlignment='Center' /></Border>" +
+        "</ControlTemplate>");
+
+    private void ResizePanel(double dw, double dh)
+    {
+        var a = SettingsStore.Current.Appearance;
+        var screen = System.Windows.Forms.Screen.FromHandle(_hwnd).WorkingArea;
+        var scale = VisualTreeHelper.GetDpi(this).DpiScaleX;
+        var maxW = screen.Width / scale - 60;
+        var maxH = screen.Height / scale * 0.85;
+        a.ExpandedWidth = Math.Round(Math.Clamp(a.ExpandedWidth + dw, 460, Math.Max(460, maxW)));
+        a.ExpandedHeight = Math.Round(Math.Clamp(a.ExpandedHeight + dh, 180, Math.Max(180, maxH)));
+        PositionWindow();      // the window grows with the panel
+        RefreshSize(animate: false);
+    }
+
+    // ---------------- Right-click menu ----------------
+
+    private void Pill_ContextMenuOpening(object sender, ContextMenuEventArgs e)
+    {
+        var menu = Pill.ContextMenu!;
+        menu.Items.Clear();
+        var b = SettingsStore.Current.Behavior;
+
+        var openOn = new MenuItem { Header = "Open on" };
+        void Option(string label, string value)
+        {
+            var item = new MenuItem { Header = label, IsCheckable = true, IsChecked = b.DefaultTab == value };
+            item.Click += (_, _) => { b.DefaultTab = value; SettingsStore.NotifyChanged(); };
+            openOn.Items.Add(item);
+        }
+        foreach (var t in Notch.Modules.Tabs) Option(t.Title, t.Id);
+        openOn.Items.Add(new Separator());
+        Option("Last used tab", "last");
+        Option("Smart (music while playing)", "smart");
+        menu.Items.Add(openOn);
+
+        var a = SettingsStore.Current.Appearance;
+        var extra = new MenuItem { Header = "Tabs that don't fit" };
+        void Overflow(string label, string value)
+        {
+            var item = new MenuItem { Header = label, IsCheckable = true, IsChecked = a.TabOverflow == value };
+            item.Click += (_, _) => { a.TabOverflow = value; SettingsStore.NotifyChanged(); };
+            extra.Items.Add(item);
+        }
+        Overflow("Show on a second row", "Wrap");
+        Overflow("Put in a More ▾ menu", "Menu");
+        menu.Items.Add(extra);
+
+        var edit =new MenuItem { Header = LayoutEditor.IsEditing ? "Finish editing layout" : "Edit layout…" };
+        edit.Click += (_, _) =>
+        {
+            if (!LayoutEditor.IsEditing && _state != NotchState.Expanded) { Expand(); Activate(); }
+            LayoutEditor.Toggle();
+        };
+        menu.Items.Add(edit);
+        menu.Items.Add(new Separator());
+        var settings = new MenuItem { Header = "Settings" };
+        settings.Click += (_, _) => ShowSettings();
+        menu.Items.Add(settings);
+    }
+
+    private void ShowTab(string id)
+    {
+        var module = Notch.Modules.Get(id);
+        if (module == null || !module.HasTab) return;
+        _tab = id;
+        SettingsStore.Current.Behavior.LastTab = id;
+        if (!_views.TryGetValue(id, out var view))
+        {
+            try { view = module.CreateView() ?? new TextBlock { Text = module.Title }; }
+            catch (Exception ex)
+            {
+                Log.Error($"view {id}", ex);
+                view = new TextBlock { Text = $"{module.Title} failed to load: {ex.Message}", Style = (Style)FindResource("Caption"), TextWrapping = TextWrapping.Wrap };
+            }
+            _views[id] = view; // views are cached: switching tabs never tears down running work
+        }
+        TabContent.Content = view;
+        if (LayoutEditor.IsEditing) RebuildTabs(); // highlight the current chip
+        UpdateEditButtons();
+        foreach (var (rb, _) in _tabButtons)
+        {
+            var isThis = (string)rb.Tag == id;
+            if (rb.IsChecked != isThis) rb.IsChecked = isThis;
+        }
+        // With labels only on the open tab, widths change as you switch, so re-fit the row.
+        if (SettingsStore.Current.Appearance.TabLabels == "Selected") LayoutTabs();
+        else UpdateMoreButton();
+        Fade(TabContent, 0.2, 1, 200, 0);
+        Rise(TabContent, 6, 240);
+    }
+
+    private void SwitchTab(int delta)
+    {
+        var tabs = Notch.Modules.Tabs.ToList();
+        if (tabs.Count == 0) return;
+        var i = tabs.FindIndex(t => t.Id == _tab);
+        ShowTab(tabs[(i + delta + tabs.Count) % tabs.Count].Id);
+    }
+
+    // ---------------- Header ----------------
+
+    private void UpdateHeader()
+    {
+        var clock = SettingsStore.Current.Clock;
+        ClockText.Visibility = clock.ShowInHeader ? Visibility.Visible : Visibility.Collapsed;
+        ClockText.Text = ClockFormat.Header(DateTime.Now);
+        if (_clockTimer.Interval != ClockFormat.TickInterval) _clockTimer.Interval = ClockFormat.TickInterval;
+        var bat = Notch.Battery;
+        BatteryPanel.Visibility = bat.HasBattery ? Visibility.Visible : Visibility.Collapsed;
+        BatteryText.Text = bat.Text;
+        BatteryGlyph.Text = bat.Glyph;
+        BatteryGlyph.Foreground = bat.Charging ? Ui.Green : bat.Percent is >= 0 and <= 20 ? Ui.Red : (Brush)FindResource("TextBrush");
+        CaffeineToggle.IsChecked = Notch.KeepAwake.IsActive;
+    }
+
+    private void Caffeine_Click(object sender, RoutedEventArgs e) => Notch.KeepAwake.Toggle();
+
+    private void PopOut_Click(object sender, RoutedEventArgs e) => PopOut(_tab);
+
+    private void Settings_Click(object sender, RoutedEventArgs e) => ShowSettings();
+
+    public void PopOut(string moduleId)
+    {
+        var m = Notch.Modules.Get(moduleId);
+        if (m == null) return;
+        Collapse();
+        new DetachedWindow(m).Show();
+    }
+
+    // ---------------- README screenshots ----------------
+
+    /// <summary>
+    /// Developer helper (Notch.exe --readme-shots &lt;folder&gt;): opens each showcase tab and saves the notch's own
+    /// pixels over a plain backdrop — nothing of the desktop or other windows is captured. Also saves Settings.
+    /// </summary>
+    public async Task SaveReadmeShotsAsync(string folder)
+    {
+        try
+        {
+            Directory.CreateDirectory(folder);
+            await Task.Delay(6000); // let music, weather and devices load first
+            // Hold the notch open without pressing the pin, so the pin doesn't show as "on" in the pictures,
+            // and ignore the real mouse so whatever it rests on doesn't show a hover highlight.
+            _scripted = true;
+            Header.IsHitTestVisible = false;
+            Mouse.Synchronize();
+            foreach (var (file, tab) in new[] { ("home", "home"), ("now-playing", "music"), ("desktops", "desktops"), ("launcher", "launcher"), ("documents", "documents") })
+            {
+                if (Notch.Modules.Tabs.All(t => t.Id != tab)) continue;
+                OpenTab(tab);
+                await Task.Delay(1400);
+                SaveShot(System.IO.Path.Combine(folder, file + ".png"), Pill);
+            }
+            _scripted = false;
+            Header.IsHitTestVisible = true;
+            Collapse();
+            await Task.Delay(1400);
+            SaveShot(System.IO.Path.Combine(folder, "pill.png"), Pill);
+
+            ShowSettings("Appearance");
+            await Task.Delay(1500);
+            if (_settings?.Content is FrameworkElement content)
+                SaveShot(System.IO.Path.Combine(folder, "settings.png"), content, (Brush)FindResource("PanelBrush"), pad: 0);
+            // The Home page of Settings, with its live layout preview.
+            _settings?.Navigate("Home");
+            await Task.Delay(1200);
+            if (_settings?.Content is FrameworkElement home)
+                SaveShot(System.IO.Path.Combine(folder, "settings-home.png"), home, (Brush)FindResource("PanelBrush"), pad: 0);
+            _settings?.Close();
+            Log.Info("README screenshots saved to " + folder);
+        }
+        catch (Exception ex) { Log.Error("README screenshots", ex); }
+        finally { _scripted = false; Header.IsHitTestVisible = true; }
+    }
+
+    /// <summary>True while a screenshot run or the demo tour drives the notch: it stays open and ignores the mouse.</summary>
+    private bool _scripted;
+
+    /// <summary>True during the demo tour: screen recorders may see the notch even if it's normally hidden from capture.</summary>
+    private bool _recordingTour;
+
+    // ---------------- Demo tour ----------------
+
+    /// <summary>
+    /// A ~40-second, hands-free tour for recording a video (palette › "Play demo tour", or Notch.exe --demo-tour):
+    /// opens on Home, steps through Music, Desktops, Launcher, Shelf and Docs, cycles a few themes, shows an island,
+    /// then closes. It ignores the mouse, lets screen recorders see the notch for its duration, and puts the theme,
+    /// tab and capture setting back exactly as they were.
+    /// </summary>
+    public async Task PlayDemoTourAsync()
+    {
+        if (_scripted) return;
+        _scripted = true;
+        var a = SettingsStore.Current.Appearance;
+        var saved = (a.AccentColor, a.BackgroundColor, a.GradientColor, a.GradientAngle, a.BackgroundType);
+        var savedTab = _tab;
+        try
+        {
+            // Visible to the screen recorder for the tour, whatever the "hide from screen capture" setting says.
+            _recordingTour = true;
+            ApplySettings();
+            Pill.IsHitTestVisible = false; // a resting mouse can't open, close or highlight anything
+            Collapse();
+            await Task.Delay(3000);        // time for the palette to close and the recording to settle
+
+            // Captions only appear in a recorded video (RecordDemoTourAsync), never on screen.
+            async Task Show(string tab, int ms, string caption)
+            {
+                if (Notch.Modules.Tabs.All(t => t.Id != tab)) return;
+                TourCaption = caption;
+                OpenTab(tab);
+                await Task.Delay(ms);
+            }
+            TourCaption = "Notch: a Dynamic Island for Windows";
+            await Task.Delay(1500);        // the closed pill, with what's playing
+            await Show("home", 4500, "Everything you need, one hover away");
+            await Show("music", 5000, "Your music, right at the top");
+            await Show("desktops", 4000, "Every desktop at a glance");
+            await Show("launcher", 3000, "Your apps, one click away");
+            await Show("shelf", 3000, "A shelf for your files");
+            await Show("documents", 3000, "Convert and edit documents on your PC");
+
+            // Themes, on Home so the cards show them off.
+            await Show("home", 800, "Make it yours");
+            foreach (var name in new[] { "Midnight", "Aurora", "Ember", "Lime", "Rose" })
+            {
+                if (ThemePresets.All.FirstOrDefault(t => t.Name == name) is { } theme) ThemePresets.Apply(theme);
+                await Task.Delay(1300);
+            }
+            RestoreTheme();
+
+            await Task.Delay(800);
+            TourCaption = "Alerts that don't get in your way";
+            Collapse();
+            await Task.Delay(1500);
+            Notch.Hub.Notify(Glyphs.Stopwatch, "Focus session complete", "Time for a 5-minute break", Ui.Green, IslandPriority.High, 3.5);
+            await Task.Delay(4500);
+            TourCaption = "Notch: free and open source";
+            await Task.Delay(2500);
+        }
+        catch (Exception ex) { Log.Error("demo tour", ex); }
+        finally
+        {
+            Pill.IsHitTestVisible = true;
+            _scripted = false;
+            _recordingTour = false;
+            _tourCaption = "";
+            RestoreTheme(); // re-applies settings, which also puts "hide from screen capture" back
+            _tab = savedTab;
+            Collapse();
+        }
+
+        void RestoreTheme()
+        {
+            (a.AccentColor, a.BackgroundColor, a.GradientColor, a.GradientAngle, a.BackgroundType) = saved;
+            SettingsStore.NotifyChanged();
+        }
+    }
+
+    /// <summary>What the current part of the demo tour is about; drawn under the notch in recorded videos.</summary>
+    private string TourCaption
+    {
+        get => _tourCaption;
+        set { if (_tourCaption != value) { _tourCaption = value; _captionSince = DateTime.Now; } }
+    }
+    private string _tourCaption = "";
+    private DateTime _captionSince = DateTime.Now;
+
+    /// <summary>
+    /// Developer helper (Notch.exe --record-tour &lt;folder&gt;): plays the demo tour and saves it as 1920×1080 JPEG frames
+    /// drawn from the notch itself (no wallpaper or other windows), with the tour's captions underneath, plus
+    /// frames.txt with each frame's time in milliseconds. A separate encoder turns them into an MP4.
+    /// </summary>
+    public async Task RecordDemoTourAsync(string folder)
+    {
+        try
+        {
+            Directory.CreateDirectory(folder);
+            foreach (var old in Directory.GetFiles(folder, "frame_*.jpg")) File.Delete(old);
+            await Task.Delay(5000); // let music, weather and devices load first
+
+            const int W = 1920, H = 1080;
+            const double scale = 1.7;  // the notch, large, hanging from the top edge
+            const int captionTop = 760;
+
+            // The backdrop is drawn once; each frame only renders the notch (software rendering is the slow part),
+            // then composes backdrop + notch + caption off the UI thread, so the tour's animations stay smooth.
+            var backdrop = new byte[W * H * 4];
+            {
+                var v = new DrawingVisual();
+                using (var dc = v.RenderOpen())
+                    dc.DrawRectangle(new LinearGradientBrush(Color.FromRgb(0x3A, 0x40, 0x58), Color.FromRgb(0x16, 0x19, 0x26), 90), null, new Rect(0, 0, W, H));
+                var b = new RenderTargetBitmap(W, H, 96, 96, PixelFormats.Pbgra32);
+                b.Render(v);
+                b.CopyPixels(backdrop, W * 4, 0);
+            }
+            var pillBrush = new VisualBrush(Pill) { Stretch = Stretch.Fill };
+            var typeface = new Typeface(new FontFamily("Segoe UI Variable Display"), FontStyles.Normal, FontWeights.SemiBold, FontStretches.Normal);
+            var captions = new Dictionary<string, (byte[] Pixels, int W, int H)>();
+            (byte[] Pixels, int W, int H) Caption(string text)
+            {
+                if (captions.TryGetValue(text, out var c)) return c;
+                var ft = new FormattedText(text, System.Globalization.CultureInfo.CurrentUICulture, FlowDirection.LeftToRight,
+                    typeface, 64, new SolidColorBrush(Color.FromRgb(0xF4, 0xF6, 0xFB)), 1.0);
+                int cw = (int)Math.Ceiling(ft.Width) + 4, ch = (int)Math.Ceiling(ft.Height) + 4;
+                var v = new DrawingVisual();
+                using (var dc = v.RenderOpen()) dc.DrawText(ft, new Point(2, 2));
+                var b = new RenderTargetBitmap(cw, ch, 96, 96, PixelFormats.Pbgra32);
+                b.Render(v);
+                var px = new byte[cw * ch * 4];
+                b.CopyPixels(px, cw * 4, 0);
+                return captions[text] = (px, cw, ch);
+            }
+
+            var times = new List<long>();
+            var clock = System.Diagnostics.Stopwatch.StartNew();
+            var writes = new List<Task>();
+            var frame = 0;
+            var recording = true;
+            var pending = 0;
+
+            void Capture()
+            {
+                // Skip the tour's lead-in (it's only there for hand recording), and if saving falls behind,
+                // skip a frame rather than pile up memory (each composed frame is ~8 MB).
+                if (!recording || _tourCaption.Length == 0 || Volatile.Read(ref pending) > 24) return;
+                int pw = (int)Math.Round(Pill.ActualWidth * scale), ph = (int)Math.Round(Pill.ActualHeight * scale);
+                if (pw <= 0 || ph <= 0) return;
+                var v = new DrawingVisual();
+                using (var dc = v.RenderOpen()) dc.DrawRectangle(pillBrush, null, new Rect(0, 0, pw, ph));
+                var notch = new RenderTargetBitmap(pw, ph, 96, 96, PixelFormats.Pbgra32);
+                notch.Render(v);
+                notch.Freeze();
+                var caption = Caption(_tourCaption);
+                var fade = Math.Clamp((DateTime.Now - _captionSince).TotalSeconds / 0.45, 0, 1);
+                var path = System.IO.Path.Combine(folder, $"frame_{++frame:00000}.jpg");
+                times.Add(clock.ElapsedMilliseconds);
+                Interlocked.Increment(ref pending);
+                writes.Add(Task.Run(() =>
+                {
+                    try
+                    {
+                        var px = (byte[])backdrop.Clone();
+                        var np = new byte[pw * ph * 4];
+                        notch.CopyPixels(np, pw * 4, 0);
+                        Blend(px, np, pw, ph, (W - pw) / 2, 0, 1.0);
+                        Blend(px, caption.Pixels, caption.W, caption.H, (W - caption.W) / 2, captionTop + (int)((1 - fade) * 12), fade);
+                        var image = BitmapSource.Create(W, H, 96, 96, PixelFormats.Pbgra32, null, px, W * 4);
+                        var encoder = new JpegBitmapEncoder { QualityLevel = 92 };
+                        encoder.Frames.Add(BitmapFrame.Create(image));
+                        using var stream = File.Create(path);
+                        encoder.Save(stream);
+                    }
+                    finally { Interlocked.Decrement(ref pending); }
+                }));
+            }
+
+            // Premultiplied-alpha "over": dst = src·opacity + dst·(1 − srcAlpha·opacity).
+            static void Blend(byte[] dst, byte[] src, int sw, int sh, int x0, int y0, double opacity)
+            {
+                if (opacity <= 0) return;
+                int o = (int)(opacity * 256);
+                for (int y = 0; y < sh; y++)
+                {
+                    int dy = y0 + y;
+                    if (dy < 0 || dy >= H) continue;
+                    for (int x = 0; x < sw; x++)
+                    {
+                        int dx = x0 + x;
+                        if (dx < 0 || dx >= W) continue;
+                        int s = (y * sw + x) * 4, d = (dy * W + dx) * 4;
+                        int a = src[s + 3] * o >> 8;
+                        if (a == 0) continue;
+                        int inv = 255 - a;
+                        dst[d] = (byte)((src[s] * o >> 8) + dst[d] * inv / 255);
+                        dst[d + 1] = (byte)((src[s + 1] * o >> 8) + dst[d + 1] * inv / 255);
+                        dst[d + 2] = (byte)((src[s + 2] * o >> 8) + dst[d + 2] * inv / 255);
+                        dst[d + 3] = 255;
+                    }
+                }
+            }
+
+            var ticker = new DispatcherTimer(DispatcherPriority.Render) { Interval = TimeSpan.FromMilliseconds(1000.0 / 30) };
+            ticker.Tick += (_, _) => Capture();
+            ticker.Start();
+            await PlayDemoTourAsync();
+            recording = false;
+            ticker.Stop();
+            await Task.WhenAll(writes);
+            File.WriteAllLines(System.IO.Path.Combine(folder, "frames.txt"), times.Select(t => t.ToString()));
+            Log.Info($"Demo tour recorded: {frame} frames over {clock.Elapsed.TotalSeconds:0.0}s to {folder}");
+        }
+        catch (Exception ex) { Log.Error("record demo tour", ex); }
+    }
+
+    /// <summary>Render an element at 2× over a slate backdrop (the notch hangs from the top edge, with a soft shadow).</summary>
+    private static void SaveShot(string path, FrameworkElement element, Brush? background = null, double pad = 44)
+    {
+        var w = element.ActualWidth;
+        var h = element.ActualHeight;
+        if (w <= 0 || h <= 0) return;
+        var image = new System.Windows.Shapes.Rectangle
+        {
+            Width = w,
+            Height = h,
+            Fill = new VisualBrush(element) { Stretch = Stretch.None, AlignmentX = AlignmentX.Left, AlignmentY = AlignmentY.Top },
+            VerticalAlignment = VerticalAlignment.Top,
+            HorizontalAlignment = HorizontalAlignment.Center,
+            Margin = new Thickness(pad, 0, pad, pad),
+        };
+        if (pad > 0) image.Effect = new System.Windows.Media.Effects.DropShadowEffect { BlurRadius = 26, ShadowDepth = 6, Direction = 270, Opacity = 0.45 };
+        var frame = new Border { Background = background ?? new SolidColorBrush(Color.FromRgb(0x3A, 0x40, 0x58)), Child = image };
+        var size = new Size(w + pad * 2, h + pad);
+        frame.Measure(size);
+        frame.Arrange(new Rect(size));
+        frame.UpdateLayout();
+        const double scale = 2;
+        var bitmap = new RenderTargetBitmap((int)Math.Ceiling(size.Width * scale), (int)Math.Ceiling(size.Height * scale), 96 * scale, 96 * scale, PixelFormats.Pbgra32);
+        bitmap.Render(frame);
+        var encoder = new PngBitmapEncoder();
+        encoder.Frames.Add(BitmapFrame.Create(bitmap));
+        using var stream = File.Create(path);
+        encoder.Save(stream);
+    }
+
+    private SettingsWindow? _settings;
+
+    public void ShowSettings(string? page = null)
+    {
+        Collapse();
+        if (_settings is not { IsLoaded: true })
+        {
+            _settings = new SettingsWindow();
+            _settings.Show();
+        }
+        if (page != null) _settings.Navigate(page);
+        _settings.Activate();
+    }
+}
