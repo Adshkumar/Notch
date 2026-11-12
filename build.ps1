@@ -1,6 +1,6 @@
-# Build and run Notch on Windows.
+# Build and run Notro on Windows.
 #   .\build.ps1            → debug build + run
-#   .\build.ps1 -Publish   → self-contained single-file Notch.exe in .\publish
+#   .\build.ps1 -Publish   → self-contained single-file Notro.exe in .\publish
 param([switch] $Publish)
 
 $ErrorActionPreference = 'Stop'
@@ -14,7 +14,7 @@ if ($Publish) {
     $rid = if ($env:PROCESSOR_ARCHITECTURE -eq 'ARM64') { 'win-arm64' } else { 'win-x64' }
     dotnet publish src/Notchify/Notchify.csproj -c Release -r $rid --self-contained true `
         -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true -o publish
-    Write-Host "`nDone → publish\Notch.exe"
+    Write-Host "`nDone → publish\Notro.exe"
 } else {
     dotnet run --project src/Notchify/Notchify.csproj
 }

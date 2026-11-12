@@ -63,7 +63,7 @@ function Shot([string] $file, [string] $source, [string] $headline, [string] $li
 }
 
 Shot '01-home.png' 'home-v2.png' 'Everything you need, one hover away' 'Clock, weather, sound, brightness, Bluetooth and notes in a notch at the top of your screen.'
-# Played with an original demo track ("Midnight Drive" by Notch), so no third-party album art or lyrics.
+# Played with an original demo track ("Midnight Drive" by Notro), so no third-party album art or lyrics.
 Shot '02-music.png' 'docs\store\source\now-playing-demo.png' 'Your music, right at the top' 'Album art and controls for Spotify, YouTube Music and more, with synced lyrics when available.'
 Shot '03-desktops.png' 'desktops-v2.png' 'Every desktop at a glance' 'Jump to any window, or drag it onto another virtual desktop.'
 Shot '04-documents.png' 'documents-v2.png' 'Convert and edit documents' 'Word to PDF, PDF to Word and a PDF editor, all on your PC. Nothing is uploaded.'

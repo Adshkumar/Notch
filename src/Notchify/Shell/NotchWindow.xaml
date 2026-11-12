@@ -3,7 +3,7 @@
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:core="clr-namespace:Notchify.Core"
         xmlns:c="clr-namespace:Notchify.Controls"
-        Title="Notch" WindowStyle="None" AllowsTransparency="True" Background="Transparent"
+        Title="Notro" WindowStyle="None" AllowsTransparency="True" Background="Transparent"
         Topmost="True" ShowInTaskbar="False" ResizeMode="NoResize" ShowActivated="False"
         UseLayoutRounding="True" SnapsToDevicePixels="True"
         FontFamily="{StaticResource UiFont}" Foreground="{DynamicResource TextBrush}"
@@ -101,17 +101,6 @@
 
     <Grid x:Name="Root">
         <Grid x:Name="PillHost" HorizontalAlignment="Center" VerticalAlignment="Top">
-            <!-- Soft shadow drawn behind the pill so the pill itself can clip to its rounded shape -->
-            <Grid x:Name="ShadowHost" IsHitTestVisible="False">
-                <Border x:Name="Shadow" Background="Black" Opacity="0.55" IsHitTestVisible="False"
-                        Width="{Binding ActualWidth, ElementName=Pill}" Height="{Binding ActualHeight, ElementName=Pill}"
-                        CornerRadius="{Binding CornerRadius, ElementName=Pill}" VerticalAlignment="Top">
-                    <Border.Effect>
-                        <BlurEffect Radius="18" />
-                    </Border.Effect>
-                </Border>
-            </Grid>
-
             <Border x:Name="Pill" Background="{DynamicResource NotchBrush}" VerticalAlignment="Top" AllowDrop="True"
                     Width="190" Height="32" CornerRadius="0,0,16,16">
                 <Grid x:Name="PillContent">

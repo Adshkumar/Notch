@@ -33,7 +33,7 @@ internal sealed class GlassBackdrop
             Topmost = true,
             ResizeMode = ResizeMode.NoResize,
             Width = 1, Height = 1, Left = -10000, Top = -10000,
-            Title = "Notch glass",
+            Title = "Notro glass",
         };
         _window.SourceInitialized += (_, _) =>
         {

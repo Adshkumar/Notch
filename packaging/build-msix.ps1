@@ -1,4 +1,4 @@
-# Build the Microsoft Store package (MSIX) for Notch.
+# Build the Microsoft Store package (MSIX) for Notro.
 #
 #   .\packaging\build-msix.ps1                 → x64 + arm64 .msix files and one .msixbundle in .\msix-out
 #   .\packaging\build-msix.ps1 -Arch x64       → just x64
@@ -50,7 +50,7 @@ if ($identity.IdentityName -like '*Placeholder*') {
 
 # ---------- Store images, generated from the app icon ----------
 Add-Type -AssemblyName System.Drawing
-$iconSource = Join-Path $root 'Icon\notch-1024.png'
+$iconSource = Join-Path $root 'Icon\notro-1024.png'
 $images = Join-Path $work 'Images'
 New-Item -ItemType Directory -Force $images | Out-Null
 function Save-Image([string] $file, [int] $w, [int] $h, [double] $iconShare = 1.0) {
@@ -103,7 +103,7 @@ foreach ($a in $Arch) {
     & $makepri new /pr $pri /cf (Join-Path $work 'priconfig.xml') /mn (Join-Path $pri 'AppxManifest.xml') /of (Join-Path $layout 'resources.pri') /o | Out-Null
     if ($LASTEXITCODE -ne 0) { throw "makepri failed for $a" }
 
-    $msix = Join-Path $Out "Notch_${packageVersion}_$a.msix"
+    $msix = Join-Path $Out "Notro_${packageVersion}_$a.msix"
     & $makeappx pack /d $layout /p $msix /o | Out-Null
     if ($LASTEXITCODE -ne 0) { throw "makeappx pack failed for $a" }
     $built += $msix
@@ -115,7 +115,7 @@ if ($built.Count -gt 1) {
     $bundleDir = Join-Path $work 'bundle'
     New-Item -ItemType Directory -Force $bundleDir | Out-Null
     $built | ForEach-Object { Copy-Item $_ $bundleDir }
-    $bundle = Join-Path $Out "Notch_$packageVersion.msixbundle"
+    $bundle = Join-Path $Out "Notro_$packageVersion.msixbundle"
     & $makeappx bundle /d $bundleDir /p $bundle /bv $packageVersion /o | Out-Null
     if ($LASTEXITCODE -ne 0) { throw 'makeappx bundle failed' }
     Write-Host "built $bundle"

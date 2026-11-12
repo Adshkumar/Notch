@@ -2,7 +2,7 @@ namespace Notchify.Core;
 
 public static class AppInfo
 {
-    public const string Name = "Notch";
+    public const string Name = "Notro";
     public const string Version = "0.4.0";
     public const string Developer = "Adarsh Kumar";
 
@@ -11,7 +11,7 @@ public static class AppInfo
     {
         get
         {
-            try { return System.Windows.Media.Imaging.BitmapFrame.Create(new Uri("pack://application:,,,/Assets/Notch.ico")); }
+            try { return System.Windows.Media.Imaging.BitmapFrame.Create(new Uri("pack://application:,,,/Assets/Notro.ico")); }
             catch { return null; }
         }
     }

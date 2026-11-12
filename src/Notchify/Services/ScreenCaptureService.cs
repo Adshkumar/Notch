@@ -95,7 +95,7 @@ public static class ScreenCaptureService
         var list = new List<IntPtr>();
         foreach (Window w in Application.Current.Windows)
         {
-            if (w is not Shell.NotchWindow && w.Title != "Notch glass") continue;
+            if (w is not Shell.NotchWindow && w.Title != "Notro glass") continue;
             var h = new WindowInteropHelper(w).Handle;
             if (h == IntPtr.Zero) continue;
             Native.SetWindowDisplayAffinity(h, Native.WDA_EXCLUDEFROMCAPTURE);
@@ -212,7 +212,7 @@ public static class ScreenCaptureService
             Background = Brushes.Black;
             Cursor = Cursors.Cross;
             Left = -32000; Top = -32000; Width = 10; Height = 10;
-            Title = "Notch capture";
+            Title = "Notro capture";
 
             _dim = new ShapePath { Fill = new SolidColorBrush(Color.FromArgb(0x88, 0, 0, 0)), IsHitTestVisible = false };
             _frame = new Rectangle { Stroke = Ui.Accent, StrokeThickness = 1.5, Visibility = Visibility.Collapsed, IsHitTestVisible = false };

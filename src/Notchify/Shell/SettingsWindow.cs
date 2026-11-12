@@ -145,6 +145,18 @@ public sealed class SettingsWindow : Window
             var fill = new LinearGradientBrush(bg, gr, new Point(0.5 - Math.Cos(rad) / 2, 0.5 - Math.Sin(rad) / 2), new Point(0.5 + Math.Cos(rad) / 2, 0.5 + Math.Sin(rad) / 2));
             var preview = new Grid { Width = 92, Height = 46 };
             preview.Children.Add(new Border { Background = fill, CornerRadius = new CornerRadius(10) });
+            if (t.Glass)
+            {
+                var sheen = new LinearGradientBrush(
+                    Color.FromArgb(0x50, 255, 255, 255),
+                    Color.FromArgb(0x08, 255, 255, 255),
+                    new Point(0.5, 0),
+                    new Point(0.5, 1));
+                var rim = new SolidColorBrush(Color.FromArgb(0x70, 255, 255, 255));
+                rim.Freeze();
+                preview.Children.Add(new Border { Background = sheen, CornerRadius = new CornerRadius(10) });
+                preview.Children.Add(new Border { BorderBrush = rim, BorderThickness = new Thickness(1), CornerRadius = new CornerRadius(9), Margin = new Thickness(1) });
+            }
             preview.Children.Add(new Border { BorderBrush = (Brush)Application.Current.FindResource("CardStrokeBrush"), BorderThickness = new Thickness(1), CornerRadius = new CornerRadius(10) });
             preview.Children.Add(new System.Windows.Shapes.Ellipse
             {
@@ -425,7 +437,7 @@ public sealed class SettingsWindow : Window
         glassNote.Visibility = GlassBackdrop.SystemAllowsBlur ? Visibility.Collapsed : Visibility.Visible;
 
         return Page(
-            Header("Theme", "One click sets the background, gradient and accent together. Fine-tune them further down."),
+            Header("Theme", "Choose a palette. Liquid Glass enables translucent tint, live blur and a soft reflective rim."),
             ThemeSwatches(() => { PreviewExpanded(); RefreshPage(); }),
             Header("Size & shape", "Drag the sliders — the notch updates live."),
             Choice("Style", new[] { "Notch", "Pill", "Capsule", "Circle", "Square", "Top round", "Cut corners", "Hexagon", "Diamond", "Ticket", "Soft square", "Squircle", "Oval", "Top capsule", "Monitor", "Mouse" }, () => a.Style, v => a.Style = v,
@@ -697,7 +709,7 @@ public sealed class SettingsWindow : Window
         var access = mirror?.Access ?? NotificationAccess.Off;
         var accessButtons = new List<UIElement>();
         if (access == NotificationAccess.NotPackaged)
-            accessButtons.Add(Chip("Get Notch from the Store", (_, _) => Ui.OpenUrl("ms-windows-store://pdp/?productid=9N2LWTDSX986"), Glyphs.Download, accent: true));
+            accessButtons.Add(Chip("Get Notro from the Store", (_, _) => Ui.OpenUrl("ms-windows-store://pdp/?productid=9N2LWTDSX986"), Glyphs.Download, accent: true));
         if (access is NotificationAccess.Denied or NotificationAccess.Error)
             accessButtons.Add(Chip("Open Windows notification access", (_, _) => Ui.OpenUrl("ms-settings:privacy-notifications"), Glyphs.Settings, accent: true));
         return Page(
@@ -762,7 +774,7 @@ public sealed class SettingsWindow : Window
             list.Children.Clear();
             if (w.Places.Count == 0)
             {
-                list.Children.Add(Note("No places yet — Notch uses Windows location for the weather. Search below to add one."));
+                list.Children.Add(Note("No places yet — Notro uses Windows location for the weather. Search below to add one."));
                 return;
             }
             for (var i = 0; i < w.Places.Count; i++)
@@ -1260,7 +1272,7 @@ public sealed class SettingsWindow : Window
     private UIElement About()
     {
         var logo = new System.Windows.Controls.Image { Width = 72, Height = 72, Margin = new Thickness(0, 0, 16, 0) };
-        try { logo.Source = new System.Windows.Media.Imaging.BitmapImage(new Uri("pack://application:,,,/Assets/Notch-256.png")); } catch { }
+        try { logo.Source = new System.Windows.Media.Imaging.BitmapImage(new Uri("pack://application:,,,/Assets/Notro-256.png")); } catch { }
         var title = new StackPanel
         {
             VerticalAlignment = VerticalAlignment.Center,
@@ -1277,7 +1289,7 @@ public sealed class SettingsWindow : Window
             Buttons(
                 Chip("Open data folder", (_, _) => Ui.OpenUrl(Paths.Root), Glyphs.Folder),
                 Chip("View log", (_, _) => Ui.OpenUrl(Log.FilePath), Glyphs.Document)),
-            Header("Credits", "Lyrics by LRCLIB · Weather by Open-Meteo · Audio via NAudio. Inspired by Notchy for macOS."),
+            Header("Credits", "Built exclusively for Windows · Lyrics by LRCLIB · Weather by Open-Meteo · Audio via NAudio."),
             Note($"© 2026 {AppInfo.Developer}."));
     }
 

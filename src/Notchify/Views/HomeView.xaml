@@ -155,7 +155,7 @@
                 <WrapPanel VerticalAlignment="Center" HorizontalAlignment="Center">
                     <ToggleButton Tag="caffeine" Style="{StaticResource IconToggle}" Content="&#xE945;" ToolTip="Keep awake" Click="Caffeine_Click" Margin="2" />
                     <ToggleButton Tag="mic" Style="{StaticResource IconToggle}" Content="&#xEC54;" ToolTip="Mute microphone everywhere" Click="Mic_Click" Margin="2" />
-                    <ToggleButton Tag="hide" Style="{StaticResource IconToggle}" Content="&#xEA18;" ToolTip="Hide Notch from screen capture" Click="Hide_Click" Margin="2" />
+                    <ToggleButton Tag="hide" Style="{StaticResource IconToggle}" Content="&#xEA18;" ToolTip="Hide Notro from screen capture" Click="Hide_Click" Margin="2" />
                     <Button Style="{StaticResource IconButton}" Content="&#xE7A8;" ToolTip="Screen capture (copies to the clipboard)" Click="Capture_Click" Margin="2" />
                     <Button Style="{StaticResource IconButton}" Content="&#xE790;" ToolTip="Colour eyedropper" Click="Eyedropper_Click" Margin="2" />
                     <Button Style="{StaticResource IconButton}" Content="&#xE721;" ToolTip="Command palette" Click="Palette_Click" Margin="2" />
@@ -199,7 +199,7 @@
                     <WrapPanel HorizontalAlignment="Center">
                         <ToggleButton Tag="caffeine" Style="{StaticResource IconToggle}" Content="&#xE945;" ToolTip="Keep awake" Click="Caffeine_Click" Margin="2,0" />
                         <ToggleButton Tag="mic" Style="{StaticResource IconToggle}" Content="&#xEC54;" ToolTip="Mute microphone everywhere" Click="Mic_Click" Margin="2,0" />
-                        <ToggleButton Tag="hide" Style="{StaticResource IconToggle}" Content="&#xEA18;" ToolTip="Hide Notch from screen capture" Click="Hide_Click" Margin="2,0" />
+                        <ToggleButton Tag="hide" Style="{StaticResource IconToggle}" Content="&#xEA18;" ToolTip="Hide Notro from screen capture" Click="Hide_Click" Margin="2,0" />
                         <Button Style="{StaticResource IconButton}" Content="&#xE7A8;" ToolTip="Screen capture (copies to the clipboard)" Click="Capture_Click" Margin="2,0" />
                         <Button Style="{StaticResource IconButton}" Content="&#xE790;" ToolTip="Colour eyedropper" Click="Eyedropper_Click" Margin="2,0" />
                         <Button Style="{StaticResource IconButton}" Content="&#xE721;" ToolTip="Command palette" Click="Palette_Click" Margin="2,0" />

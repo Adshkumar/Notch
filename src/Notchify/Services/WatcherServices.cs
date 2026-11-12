@@ -212,7 +212,7 @@ public sealed class PrivacyMonitor
     private void Poll()
     {
         var cam = InUse("webcam");
-        var mic = InUse("microphone").Where(a => !a.Equals("Notch", StringComparison.OrdinalIgnoreCase)).ToList();
+        var mic = InUse("microphone").Where(a => !a.Equals("Notro", StringComparison.OrdinalIgnoreCase)).ToList();
         var changed = !cam.SequenceEqual(CameraApps) || !mic.SequenceEqual(MicApps);
         CameraApps = cam; MicApps = mic;
         if (!changed) return;

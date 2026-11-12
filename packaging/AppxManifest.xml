@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!--
-  MSIX manifest for the Microsoft Store build of Notch.
+  MSIX manifest for the Microsoft Store build of Notro.
   The $TOKENS$ are filled in by packaging/build-msix.ps1 (identity from packaging/identity.json,
   version from the project, architecture per build). Don't edit them here.
 -->
@@ -36,9 +36,9 @@
   </Resources>
 
   <Applications>
-    <Application Id="Notch" Executable="Notch.exe" EntryPoint="Windows.FullTrustApplication">
+    <Application Id="Notch" Executable="Notro.exe" EntryPoint="Windows.FullTrustApplication">
       <uap:VisualElements
-        DisplayName="Notch"
+        DisplayName="Notro"
         Description="A notch-style hub at the top of your screen for music, files, clipboard, desktops and more."
         BackgroundColor="transparent"
         Square150x150Logo="Images\Square150x150Logo.png"
@@ -47,8 +47,8 @@
       </uap:VisualElements>
       <Extensions>
         <!-- "Start with Windows" for the Store build (the zip build uses the Run key instead). -->
-        <desktop:Extension Category="windows.startupTask" Executable="Notch.exe" EntryPoint="Windows.FullTrustApplication">
-          <desktop:StartupTask TaskId="NotchStartup" Enabled="false" DisplayName="Notch" />
+        <desktop:Extension Category="windows.startupTask" Executable="Notro.exe" EntryPoint="Windows.FullTrustApplication">
+          <desktop:StartupTask TaskId="NotchStartup" Enabled="false" DisplayName="Notro" />
         </desktop:Extension>
       </Extensions>
     </Application>

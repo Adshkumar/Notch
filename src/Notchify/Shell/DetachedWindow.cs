@@ -18,7 +18,7 @@ public sealed class DetachedWindow : Window
     public DetachedWindow(NotchModule module)
     {
         _module = module;
-        Title = $"{module.Title} — Notch";
+        Title = $"{module.Title} — {AppInfo.Name}";
         Icon = AppInfo.Icon;
         WindowStyle = WindowStyle.None;
         AllowsTransparency = true;

@@ -37,7 +37,7 @@ public static class ShortcutCatalog
                 _apps = null; // try again next time
                 done.SetResult(new List<ShortcutTarget>());
             }
-        }) { IsBackground = true, Name = "Notch apps list" };
+        }) { IsBackground = true, Name = "Notro apps list" };
         thread.SetApartmentState(ApartmentState.STA); // Shell.Application is an STA COM object
         thread.Start();
         return done.Task;
@@ -138,7 +138,7 @@ public static class ShortcutCatalog
         return icon;
     }
 
-    /// <summary>Save an app's icon as a PNG in Notch's icon folder (for Launcher and Shelf items), or null.</summary>
+    /// <summary>Save an app's icon as a PNG in the app's icon folder (for Launcher and Shelf items), or null.</summary>
     public static string? SaveIcon(ShortcutTarget t)
     {
         if (Icon(t) is not BitmapSource bmp) return null;

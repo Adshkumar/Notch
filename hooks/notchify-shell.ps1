@@ -1,7 +1,7 @@
-# Notch shell activity for PowerShell 7+ / Windows PowerShell 5.1 (with PSReadLine).
+# Notro shell activity for PowerShell 7+ / Windows PowerShell 5.1 (with PSReadLine).
 #
 # Long-running commands become a live island on the notch; you get a "finished" island when they end.
-# Requires: Notch › Settings › Developer › "Enable the developer API".
+# Requires: Notro › Settings › Developer › "Enable the developer API".
 #
 # Enable:   add this line to your $PROFILE
 #             . "C:\path\to\notchify\hooks\notchify-shell.ps1"
@@ -56,5 +56,5 @@ function global:Disable-NotchifyShell {
     $function:global:prompt = $global:NotchifyShell.Prompt
     Remove-Item function:\Send-NotchifyShell -ErrorAction SilentlyContinue
     Remove-Variable NotchifyShell -Scope Global -ErrorAction SilentlyContinue
-    Write-Host 'Notch shell activity disabled.'
+    Write-Host 'Notro shell activity disabled.'
 }

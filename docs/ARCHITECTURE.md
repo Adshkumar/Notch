@@ -1,6 +1,6 @@
 # Architecture & customising
 
-Notch is a single WPF app on .NET 8 (the code keeps its original `Notchify` namespace and folder name). Everything is a **module**, so features can be switched off,
+Notro is a single WPF app on .NET 8 (the code keeps its original `Notchify` namespace and folder name). Everything is a **module**, so features can be switched off,
 reordered, popped out, or added without touching the shell.
 
 ```

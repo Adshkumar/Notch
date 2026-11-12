@@ -227,7 +227,9 @@ public partial class NotchWindow : Window, INotchShell
         // Fill: the collapsed pill stays a solid notch colour; the open notch and islands get the chosen
         // background, made translucent over a live blur when glass is on and Windows allows it.
         _glassActive = a.Glass && GlassBackdrop.SystemAllowsBlur;
-        _collapsedBrush = Ui.Brush(a.BackgroundColor);
+        _collapsedBrush = a.Glass && GlassBackdrop.SystemAllowsBlur
+            ? BuildPanelBrush(a, glass: true)
+            : Ui.Brush(a.BackgroundColor);
         _panelBrush = BuildPanelBrush(a, _glassActive);
         BgImage.Source = a.BackgroundType == "Image" && !string.IsNullOrWhiteSpace(a.BackgroundImage) ? Ui.LoadImage(a.BackgroundImage, 1600) : null;
         BgImage.Opacity = Math.Clamp(a.BackgroundImageOpacity, 0, 1);
@@ -551,7 +553,6 @@ public partial class NotchWindow : Window, INotchShell
                 var oval = new EllipseGeometry(new Rect(0, 0, w, h));
                 Pill.Clip = oval;
                 PillContent.Clip = oval;
-                ShadowHost.Clip = null;
                 return;
             }
 
@@ -575,7 +576,6 @@ public partial class NotchWindow : Window, INotchShell
                 squircle.Freeze();
                 Pill.Clip = squircle;
                 PillContent.Clip = squircle;
-                ShadowHost.Clip = null;
                 return;
             }
 
@@ -637,7 +637,6 @@ public partial class NotchWindow : Window, INotchShell
                 monitor.Freeze();
                 Pill.Clip = monitor;
                 PillContent.Clip = monitor;
-                ShadowHost.Clip = null;
                 return;
             }
             else
@@ -657,7 +656,6 @@ public partial class NotchWindow : Window, INotchShell
             custom.Freeze();
             Pill.Clip = custom;
             PillContent.Clip = custom;
-            ShadowHost.Clip = null;
             return;
         }
         Pill.Clip = null;
@@ -678,10 +676,6 @@ public partial class NotchWindow : Window, INotchShell
         }
         geo.Freeze();
         PillContent.Clip = geo;
-        // Over glass the shadow must stay outside the pill, or it darkens the frosted area.
-        ShadowHost.Clip = _glassActive && _state != NotchState.Collapsed
-            ? new CombinedGeometry(GeometryCombineMode.Exclude, new RectangleGeometry(new Rect(-80, -80, w + 160, h + 160)), geo)
-            : null;
     }
 
     private static Geometry BuildShapeDetails(string style, double w, double h)
@@ -1552,7 +1546,7 @@ public partial class NotchWindow : Window, INotchShell
     // ---------------- README screenshots ----------------
 
     /// <summary>
-    /// Developer helper (Notch.exe --readme-shots &lt;folder&gt;): opens each showcase tab and saves the notch's own
+    /// Developer helper (Notro.exe --readme-shots &lt;folder&gt;): opens each showcase tab and saves the panel's own
     /// pixels over a plain backdrop — nothing of the desktop or other windows is captured. Also saves Settings.
     /// </summary>
     public async Task SaveReadmeShotsAsync(string folder)
@@ -1604,7 +1598,7 @@ public partial class NotchWindow : Window, INotchShell
     // ---------------- Demo tour ----------------
 
     /// <summary>
-    /// A ~40-second, hands-free tour for recording a video (palette › "Play demo tour", or Notch.exe --demo-tour):
+    /// A ~40-second, hands-free tour for recording a video (palette › "Play demo tour", or Notro.exe --demo-tour):
     /// opens on Home, steps through Music, Desktops, Launcher, Shelf and Docs, cycles a few themes, shows an island,
     /// then closes. It ignores the mouse, lets screen recorders see the notch for its duration, and puts the theme,
     /// tab and capture setting back exactly as they were.
@@ -1633,7 +1627,7 @@ public partial class NotchWindow : Window, INotchShell
                 OpenTab(tab);
                 await Task.Delay(ms);
             }
-            TourCaption = "Notch: a Dynamic Island for Windows";
+            TourCaption = "Notro: a Dynamic Island for Windows";
             await Task.Delay(1500);        // the closed pill, with what's playing
             await Show("home", 4500, "Everything you need, one hover away");
             await Show("music", 5000, "Your music, right at the top");
@@ -1657,7 +1651,7 @@ public partial class NotchWindow : Window, INotchShell
             await Task.Delay(1500);
             Notch.Hub.Notify(Glyphs.Stopwatch, "Focus session complete", "Time for a 5-minute break", Ui.Green, IslandPriority.High, 3.5);
             await Task.Delay(4500);
-            TourCaption = "Notch: free and open source";
+            TourCaption = "Notro: free and open source";
             await Task.Delay(2500);
         }
         catch (Exception ex) { Log.Error("demo tour", ex); }
@@ -1689,7 +1683,7 @@ public partial class NotchWindow : Window, INotchShell
     private DateTime _captionSince = DateTime.Now;
 
     /// <summary>
-    /// Developer helper (Notch.exe --record-tour &lt;folder&gt;): plays the demo tour and saves it as 1920×1080 JPEG frames
+    /// Developer helper (Notro.exe --record-tour &lt;folder&gt;): plays the demo tour and saves it as 1920×1080 JPEG frames
     /// drawn from the notch itself (no wallpaper or other windows), with the tour's captions underneath, plus
     /// frames.txt with each frame's time in milliseconds. A separate encoder turns them into an MP4.
     /// </summary>

@@ -113,7 +113,7 @@ public static class Http
     private static HttpClient Create()
     {
         var c = new HttpClient { Timeout = TimeSpan.FromSeconds(20) };
-        c.DefaultRequestHeaders.UserAgent.ParseAdd($"Notch/{AppInfo.Version}");
+        c.DefaultRequestHeaders.UserAgent.ParseAdd($"Notro/{AppInfo.Version}");
         return c;
     }
 }

@@ -4,7 +4,7 @@
 #   .\notify.ps1 -Activity build -Title "Building…" -Progress 0.4      # live activity on the pill
 #   .\notify.ps1 -Activity build -Done                                   # remove it
 param(
-    [string] $Title = 'Notch',
+    [string] $Title = 'Notro',
     [string] $Message,
     [string] $Glyph,
     [string] $Accent,

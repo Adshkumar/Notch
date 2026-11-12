@@ -21,10 +21,10 @@ public partial class App : Application
         bool first;
         try { first = _singleInstance.WaitOne(e.Args.Contains("--restart") ? TimeSpan.FromSeconds(8) : TimeSpan.Zero); }
         catch (AbandonedMutexException) { first = true; }
-        // An older "Notchify" build still running would fight over the notch; leave it be and don't start twice.
+        // An older "Notchify" build still running would fight over the panel; leave it be and don't start twice.
         using var legacy = new Mutex(false, @"Local\Notchify.SingleInstance", out var legacyFree);
         if (first && !legacyFree)
-            MessageBox.Show("The old Notchify app is still running. Quit it from its tray icon, then start Notch again.", AppInfo.Name);
+            MessageBox.Show("A previous Notchify build is still running. Quit it from its tray icon, then start Notro again.", AppInfo.Name);
         if (!first || !legacyFree)
         {
             Shutdown();
@@ -67,12 +67,12 @@ public partial class App : Application
 
         Log.Info($"{AppInfo.Name} {AppInfo.Version} started");
 
-        // Developer helper: Notch.exe --readme-shots <folder> saves fresh screenshots for the README.
+        // Developer helper: Notro.exe --readme-shots <folder> saves fresh screenshots for the README.
         var shots = Array.IndexOf(e.Args, "--readme-shots");
         if (shots >= 0 && shots + 1 < e.Args.Length) _ = window.SaveReadmeShotsAsync(e.Args[shots + 1]);
-        // Notch.exe --demo-tour plays the hands-free tour for recording a video (also in the command palette).
+        // Notro.exe --demo-tour plays the hands-free tour for recording a video (also in the command palette).
         if (e.Args.Contains("--demo-tour")) _ = window.PlayDemoTourAsync();
-        // Notch.exe --record-tour <folder> plays the tour and saves it as video frames (see RecordDemoTourAsync).
+        // Notro.exe --record-tour <folder> plays the tour and saves it as video frames (see RecordDemoTourAsync).
         var record = Array.IndexOf(e.Args, "--record-tour");
         if (record >= 0 && record + 1 < e.Args.Length) _ = window.RecordDemoTourAsync(e.Args[record + 1]);
     }
@@ -105,8 +105,9 @@ public partial class App : Application
         {
             using var key = Registry.CurrentUser.OpenSubKey(@"Software\Microsoft\Windows\CurrentVersion\Run", true);
             if (key == null) return;
-            // The old name's entry points at the old exe; replace it.
+            // Remove legacy entries so an upgrade cannot launch an old copy alongside Notro.
             if (key.GetValue("Notchify") != null) key.DeleteValue("Notchify");
+            if (key.GetValue("Notch") != null) key.DeleteValue("Notch");
             if (SettingsStore.Current.Behavior.StartWithWindows)
                 key.SetValue(AppInfo.Name, $"\"{Environment.ProcessPath}\"");
             else if (key.GetValue(AppInfo.Name) != null)
@@ -117,7 +118,7 @@ public partial class App : Application
 
     /// <summary>
     /// Store (MSIX) builds can't use the Run key; Windows starts them through the StartupTask in the manifest.
-    /// If the user switched Notch off in Task Manager › Startup apps, Windows won't let us turn it back on —
+    /// If the user switched Notro off in Task Manager › Startup apps, Windows won't let us turn it back on —
     /// the setting is put back in sync and they're told where to change it.
     /// </summary>
     private static async Task ApplyPackagedStartupAsync()
@@ -137,7 +138,7 @@ public partial class App : Application
                         behavior.StartWithWindows = false;
                         SettingsStore.NotifyChanged();
                         Notch.Hub.Notify(Glyphs.Info, "Start with Windows is off in Windows",
-                            "Turn Notch on in Settings › Apps › Startup.", Ui.Orange);
+                            "Turn Notro on in Settings › Apps › Startup.", Ui.Orange);
                     });
                 }
             }
@@ -191,12 +192,12 @@ public partial class App : Application
         if (_tray != null) _tray.Visible = SettingsStore.Current.Behavior.ShowTrayIcon;
     }
 
-    /// <summary>The Notch icon at tray size; falls back to a drawn pill if the resource can't be read.</summary>
+    /// <summary>The Notro icon at tray size; falls back to a drawn pill if the resource can't be read.</summary>
     private static System.Drawing.Icon CreateTrayIcon()
     {
         try
         {
-            var res = GetResourceStream(new Uri("pack://application:,,,/Assets/Notch.ico"));
+            var res = GetResourceStream(new Uri("pack://application:,,,/Assets/Notro.ico"));
             if (res != null)
             {
                 using var stream = res.Stream;

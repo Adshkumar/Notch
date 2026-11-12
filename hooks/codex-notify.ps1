@@ -1,4 +1,4 @@
-# Notch ← Codex CLI. Shows an island when a Codex turn completes.
+# Notro ← Codex CLI. Shows an island when a Codex turn completes.
 #
 # In %USERPROFILE%\.codex\config.toml add:
 #   notify = ["powershell.exe", "-NoProfile", "-File", "C:\\path\\to\\notchify\\hooks\\codex-notify.ps1"]

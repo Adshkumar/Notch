@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="docs/images/notch-wordmark.png" width="360" alt="Notch" />
+  <img src="docs/images/notro-wordmark.png" width="360" alt="Notro" />
 </p>
 
 <p align="center">
@@ -12,7 +12,7 @@
 </p>
 
 <p align="center">
-  <img src="docs/images/home-v2.png" width="820" alt="The Notch Home page open at the top of the screen" />
+  <img src="docs/images/home-v2.png" width="820" alt="The Notro Home page open at the top of the screen" />
 </p>
 
 I couldn't find a close equivalent for Windows, so I built one myself. The project combines the idea that inspired me with my own functionality, with a simple goal: make everyday desktop tasks a little faster and easier.
@@ -68,7 +68,7 @@ This project was **inspired by [Notch](https://notchy.dev) for macOS**, but it i
 
 ### Make it yours
 - **Size & shape** — width and height (closed and open), corner radius, and sixteen closed-notch styles, including Squircle, Oval, Soft square, Top capsule, Monitor and Mouse.
-- **Themes** — Graphite, Midnight, Aurora, Ember, Lime, Rose or Pure black in one click; everything stays adjustable.
+- **Themes** — Graphite, Midnight, Aurora, Ember, Lime, Rose, Pure black or Liquid Glass with translucent tint and live blur.
 - **Colours** — solid black, any colour, a gradient, or your own picture; accent colour, and a separate tab-highlight colour and strength.
 - **Frosted glass** — optional live blur of what's behind the open notch, with tint and a sheen-and-rim highlight.
 - **Text size** — scale everything inside the notch.
@@ -166,30 +166,30 @@ This project was **inspired by [Notch](https://notchy.dev) for macOS**, but it i
 
 ## Download and install
 
-Notch supports **Windows 10 version 2004 (build 19041) or later, and Windows 11**. Choose the build that matches your processor:
+Notro supports **Windows 10 version 2004 (build 19041) or later, and Windows 11**. Choose the build that matches your processor:
 
-- `Notch-win-x64.zip` — Intel and AMD PCs.
-- `Notch-win-arm64.zip` — Windows on ARM.
+- `Notro-win-x64.zip` — Intel and AMD PCs.
+- `Notro-win-arm64.zip` — Windows on ARM.
 
-Download the ZIP from a published project release, extract it, and run `Notch.exe`. The ZIP build is self-contained: it does not need a separate .NET runtime, an installer, or administrator access. To start Notch automatically when you sign in, enable **Settings › General › Start Notch with Windows**.
+Download the ZIP from a published project release, extract it, and run `Notro.exe`. The ZIP build is self-contained: it does not need a separate .NET runtime, an installer, or administrator access. To start Notro automatically when you sign in, enable **Settings › General › Start Notro with Windows**.
 
-Notch is not currently code-signed, so Windows SmartScreen may show a warning. Only run it if you trust the source you downloaded it from.
+Notro is not currently code-signed, so Windows SmartScreen may show a warning. Only run it if you trust the source you downloaded it from.
 
 ### Optional components
 
 - **Microsoft Word or LibreOffice** — document conversions use Word when available, or LibreOffice as an alternative. Install [LibreOffice](https://www.libreoffice.org/download/download-libreoffice/) for conversions when Word is not installed.
 - **yt-dlp** — optional video downloads from a link. Install it separately if you use that feature; the path can be configured in **Settings › Quick Search**.
 - **A GitHub token** — optional, and only needed to display your GitHub Copilot quota in **AI Usage**.
-- **Calendar feed links** — optional `.ics` URLs that you provide yourself; Notch does not sign in to your calendar account.
+- **Calendar feed links** — optional `.ics` URLs that you provide yourself; Notro does not sign in to your calendar account.
 - **DDC/CI support** — required for brightness control on compatible external monitors. Enable DDC/CI in the monitor's on-screen menu if needed.
 
 ### Where your data lives
 
-- The unpackaged ZIP build stores settings and app data in `%APPDATA%\Notch`.
+- The unpackaged ZIP build keeps settings and app data in the existing `%APPDATA%\Notch` folder so upgrades preserve your data.
 - The Microsoft Store build uses Windows-managed, package-specific app data. Windows removes that package data when the Store app is uninstalled.
 - Settings are saved in `settings.json`; feature data is stored locally. The Copilot token, if configured, is protected with Windows DPAPI.
 
-On first launch, if `%APPDATA%\Notch` does not already exist, Notch checks for older `NotchX` or `Notchify` data folders and copies their data forward. More detail is in the [privacy policy](docs/PRIVACY.md).
+On first launch, if `%APPDATA%\Notch` does not already exist, Notro checks for older `NotchX` or `Notchify` data folders and copies their data forward. More detail is in the [privacy policy](docs/PRIVACY.md).
 
 ## First launch and controls
 
@@ -208,9 +208,9 @@ On first launch, if `%APPDATA%\Notch` does not already exist, Notch checks for o
 | `Esc` during built-in screen capture | Cancel the capture |
 | Left-click the tray icon | Open or close the notch |
 | Middle-click the tray icon | Toggle Caffeine (keep awake) |
-| Right-click the tray icon | Open the tray menu, including **Quit Notch** |
+| Right-click the tray icon | Open the tray menu, including **Quit Notro** |
 
-The global hotkeys and gestures can be changed in **Settings › General** and **Settings › Behaviour**. Closing the panel only hides it; choose **Quit Notch** in Settings or the tray menu to exit the app.
+The global hotkeys and gestures can be changed in **Settings › General** and **Settings › Behaviour**. Closing the panel only hides it; choose **Quit Notro** in Settings or the tray menu to exit the app.
 
 ## Settings guide
 
@@ -244,7 +244,7 @@ Settings are grouped by page. Most changes apply immediately and are saved autom
 | **Permissions** | A status overview and Windows Settings links for camera, microphone, location, startup, and related features. |
 | **Developer** | The opt-in local API, token, Claude Code hooks, agent activity, shell activity, and log access. |
 | **About** | Version, credits, data folder, and log. |
-| **Quit Notch** | Exit the app or restart it. |
+| **Quit Notro** | Exit the app or restart it. |
 
 ## Home cards
 
@@ -279,7 +279,7 @@ Cards use a **12-column grid**. Width is measured in columns; height is measured
 
 ## Privacy and data
 
-Notch has no account system, advertising, analytics, or telemetry. Most features work locally. Network access is used only by features that need it:
+Notro has no account system, advertising, analytics, or telemetry. Most features work locally. Network access is used only by features that need it:
 
 | Feature | Destination | When it connects |
 |---|---|---|
@@ -309,7 +309,7 @@ From the repository root in PowerShell:
 .\build.ps1
 ```
 
-`build.ps1` runs the Debug build and launches Notch. If the .NET SDK is missing, it attempts to install .NET 8 through WinGet. To run directly with the SDK:
+`build.ps1` runs the Debug build and launches Notro. If the .NET SDK is missing, it attempts to install .NET 8 through WinGet. To run directly with the SDK:
 
 ```powershell
 dotnet run --project src\Notchify\Notchify.csproj
@@ -327,7 +327,7 @@ Publish a self-contained, single-file executable for the current machine's archi
 .\build.ps1 -Publish
 ```
 
-The executable is written to `publish\Notch.exe`. To publish both x64 and ARM64, use the commands in the GitHub Actions workflow or build each runtime identifier separately.
+The executable is written to `publish\Notro.exe`. To publish both x64 and ARM64, use the commands in the GitHub Actions workflow or build each runtime identifier separately.
 
 ### Microsoft Store package
 
@@ -337,7 +337,7 @@ The MSIX package is built separately from the ZIP release:
 .\packaging\build-msix.ps1
 ```
 
-The script creates x64 and ARM64 packages and a bundle in `msix-out`. A Store submission requires the exact Partner Center identity values in `packaging\identity.json`. The reserved Store identity is intentionally distinct from the user-facing name **Notch**. See the [packaging guide](packaging/README.md) before building or uploading a Store package.
+The script creates x64 and ARM64 packages and a bundle in `msix-out`. A Store submission requires the exact Partner Center identity values in `packaging\identity.json`. The existing reserved Store identity is retained for compatibility while the user-facing app name is **Notro**. See the [packaging guide](packaging/README.md) before building or uploading a Store package.
 
 GitHub Actions builds on pushes and pull requests. A version tag (`v*`) creates the x64 and ARM64 release ZIPs; the Store package is published as a workflow artifact. See [`.github/workflows/build.yml`](.github/workflows/build.yml).
 
@@ -357,21 +357,21 @@ hooks/            PowerShell integrations for notifications, Codex, and shell ac
 packaging/        MSIX manifest, identity template, and packaging script
 ```
 
-The app is a **.NET 8 WPF desktop application**. Features are registered as modules so they can be independently enabled, stopped, reordered, and shown as tabs. The app's product name and executable are `Notch`; the C# namespace remains `Notchify` for compatibility with the existing code.
+The app is a **.NET 8 WPF desktop application**. Features are registered as modules so they can be independently enabled, stopped, reordered, and shown as tabs. The app's product name and executable are `Notro`; the C# namespace and project folder remain `Notchify` for compatibility with existing integrations.
 
 ## Troubleshooting
 
 | Symptom | What to check |
 |---|---|
 | The pill is not visible | Press `Ctrl+Shift+N`, click the tray icon, check the selected display in **Settings › Displays**, and check fullscreen hiding in **Settings › Behaviour**. |
-| Starting the executable appears to do nothing | Notch allows one running instance. Check the tray area (including hidden icons) and use **Open Notch** from its tray menu. |
-| The panel closes but Notch is still running | Closing the panel is not the same as quitting. Choose **Quit Notch** in Settings or the tray menu. |
+| Starting the executable appears to do nothing | Notro allows one running instance. Check the tray area (including hidden icons) and use **Open Notro** from its tray menu. |
+| The panel closes but Notro is still running | Closing the panel is not the same as quitting. Choose **Quit Notro** in Settings or the tray menu. |
 | A global shortcut does not work | Another app may already own it. Change it in **Settings › General**. |
 | Other apps' notifications do not appear | Notification mirroring requires the MSIX/Store build and Windows notification access. |
 | External brightness is unavailable | The monitor must support DDC/CI; enable it in the monitor's on-screen menu and turn on the option in **Settings › Displays**. |
 | Word/PDF conversion is unavailable | Install Microsoft Word or LibreOffice and choose the converter in **Settings › Documents**. |
 | The command-line build cannot find `dotnet` | Install the .NET 8 SDK, or run `.\build.ps1` with WinGet available so it can attempt the install. |
-| Windows warns before launch | Notch is unsigned. Verify you obtained the ZIP from a source you trust before deciding whether to run it. |
+| Windows warns before launch | Notro is unsigned. Verify you obtained the ZIP from a source you trust before deciding whether to run it. |
 
 For detailed feature limitations and Windows-specific differences, see the [feature matrix](docs/FEATURES.md). Runtime errors are written to the local `notch.log`; **Settings › About** and **Settings › Developer** provide log access.
 

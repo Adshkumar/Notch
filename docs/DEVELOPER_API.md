@@ -1,6 +1,6 @@
 # Developer API
 
-Notch can listen on **`127.0.0.1` only** so your scripts, CI, build tools and AI agents can put things on the notch.
+Notro can listen on **`127.0.0.1` only** so your scripts, CI, build tools and AI agents can put things on the notch.
 It is **off by default**: turn it on in **Settings › Developer**. Every request needs the per-install token
 (Settings › Developer › Copy), sent as `Authorization: Bearer <token>`.
 
@@ -38,7 +38,7 @@ curl -X POST http://127.0.0.1:9999/v1/notify \
 
 ## Claude Code: approvals and agent activity
 
-Claude Code can call Notch directly with **`http` hooks**. In Notch open **Settings › Developer** and click
+Claude Code can call Notro directly with **`http` hooks**. In Notro open **Settings › Developer** and click
 **Copy Claude Code hooks config**, then merge it into `%USERPROFILE%\.claude\settings.json`. It looks like:
 
 ```json
@@ -57,7 +57,7 @@ Claude Code can call Notch directly with **`http` hooks**. In Notch open **Setti
 * **PermissionRequest** — when Claude is blocked on a permission, an **Allow / Deny** island appears. Your answer goes back as
   `{"hookSpecificOutput":{"hookEventName":"PermissionRequest","decision":{"behavior":"allow"}}}`.
   If you answer in the terminal instead, the next hook event for that session clears the island.
-  If nobody answers within 9 minutes, Notch returns no decision and Claude Code falls back to its normal prompt.
+  If nobody answers within 9 minutes, Notro returns no decision and Claude Code falls back to its normal prompt.
 * **UserPromptSubmit / PostToolUse** — a "Claude · working" activity on the pill showing the current tool.
 * **Stop** — "Claude finished" with an estimated cost for that turn (from the transcript, using the prices in settings).
 * **Notification** — e.g. "Claude is waiting for your input".

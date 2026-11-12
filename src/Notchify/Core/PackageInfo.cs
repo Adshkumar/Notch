@@ -3,7 +3,7 @@ using System.Runtime.InteropServices;
 namespace Notchify.Core;
 
 /// <summary>
-/// Whether Notch runs as an MSIX package (Microsoft Store) or as the plain exe from the zip.
+/// Whether Notro runs as an MSIX package (Microsoft Store) or as the plain exe from the zip.
 /// A few things work differently when packaged — e.g. "Start with Windows" uses a StartupTask, not the Run key.
 /// </summary>
 public static class PackageInfo
@@ -15,7 +15,7 @@ public static class PackageInfo
 
     public static bool IsPackaged { get; } = Detect();
 
-    /// <summary>Id of the StartupTask declared in packaging/AppxManifest.xml.</summary>
+    /// <summary>Legacy StartupTask id retained so Store upgrades keep the user's startup preference.</summary>
     public const string StartupTaskId = "NotchStartup";
 
     private static bool Detect()

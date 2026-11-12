@@ -1,4 +1,4 @@
-# Microsoft Store listing: NotchX - Dynamic Notch
+# Microsoft Store listing: Notro
 
 Copy each section into the matching field in Partner Center (submission › **Store listings** ›
 **English (United States)**, plus **Properties** and **Age ratings**). Store ID: `9N2LWTDSX986`.
@@ -8,12 +8,12 @@ Copy each section into the matching field in Partner Center (submission › **St
 ## Store listing
 
 ### Product name
-NotchX - Dynamic Notch
+Notro
 
 ### Description
 
 ```
-Notch puts a small, Dynamic Island-style notch at the top of your Windows screen. Hover over it and it opens into a panel with everything you reach for all day: your music, files, clipboard, notes, timers and more. Move the mouse away and it tucks itself back in.
+Notro puts a small, Dynamic Island-style notch at the top of your Windows screen. Hover over it and it opens into a panel with everything you reach for all day: your music, files, clipboard, notes, timers and more. Move the mouse away and it tucks itself back in.
 
 It works on any Windows 10 or 11 PC, notch or no notch.
 
@@ -39,9 +39,9 @@ MAKE IT YOURS
 Seven themes, frosted glass, your own colours or picture, adjustable size and shape, named tabs on one or two rows, and a clock that shows time the way you like.
 
 PRIVATE BY DESIGN
-No account, no ads, no tracking. Your clipboard, notes and settings stay on your PC. Notch only goes online for features that need it, like weather and lyrics, and never through a server of its own.
+No account, no ads, no tracking. Your clipboard, notes and settings stay on your PC. Notro only goes online for features that need it, like weather and lyrics, and never through a server of its own.
 
-Notch is free and open source.
+Notro is free and open source.
 ```
 
 ### What's new in this version
@@ -107,7 +107,7 @@ Upload in this order, from `docs/store/screenshots/` (1920×1080):
 4. `05-themes.png`
 5. `04-documents.png`
 
-`02-music.png` was shot while playing an original demo track ("Midnight Drive" by Notch, with our own cover
+`02-music.png` was shot while playing an original demo track ("Midnight Drive" by Notro, with our own cover
 art), so no third-party album art or lyrics appear in the listing. Its source render is
 `docs/store/source/now-playing-demo.png`.
 
@@ -122,7 +122,7 @@ Regenerate all of them with `packaging\store-screenshots.ps1`.
 ### Additional license terms
 
 ```
-Notch is open source under the MIT licence.
+Notro is open source under the MIT licence.
 ```
 
 ### Developed by
@@ -163,8 +163,8 @@ This should give a 3+ / Everyone rating.
 
 ## Packages
 
-Upload `msix-out\Notch_<version>.msixbundle`, built with `packaging\build-msix.ps1`.
+Upload `msix-out\Notro_<version>.msixbundle`, built with `packaging\build-msix.ps1`.
 
 ## Restricted capabilities (`runFullTrust`)
 
-Paste the justification from [packaging/README.md](../../packaging/README.md#why-notch-needs-runfulltrust).
+Paste the justification from [packaging/README.md](../../packaging/README.md#why-notro-needs-runfulltrust).

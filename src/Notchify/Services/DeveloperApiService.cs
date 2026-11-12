@@ -98,7 +98,7 @@ public sealed class DeveloperApiService : IDisposable
             switch (req.HttpMethod, path)
             {
                 case ("GET", "/v1/ping"):
-                    await Reply(res, 200, new { ok = true, app = "Notch", version = AppInfo.Version });
+                    await Reply(res, 200, new { ok = true, app = AppInfo.Name, version = AppInfo.Version });
                     break;
                 case ("POST", "/v1/notify"):
                     Ui.Post(() => Notch.Hub.Notify(
@@ -207,7 +207,7 @@ public sealed class DeveloperApiService : IDisposable
                         hookEventName = "PermissionRequest",
                         decision = decision == "allow"
                             ? (object)new { behavior = "allow" }
-                            : new { behavior = "deny", message = "Denied from Notch" },
+                            : new { behavior = "deny", message = "Denied from Notro" },
                     },
                 };
             }

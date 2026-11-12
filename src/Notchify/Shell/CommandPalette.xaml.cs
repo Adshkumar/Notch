@@ -31,7 +31,7 @@ public partial class CommandPalette : Window
         _all.Add(new PaletteCommand("Settings", Glyphs.Settings, () => Notch.Shell.ShowSettings(), null, "preferences options"));
         _all.Add(new PaletteCommand("Play demo tour", Glyphs.Play, () => _ = (Notch.Shell as NotchWindow)?.PlayDemoTourAsync(),
             "A 40-second tour for recording a video", "demo video record trailer"));
-        _all.Add(new PaletteCommand("Quit Notch", Glyphs.Close, () => Application.Current.Shutdown(), null, "exit"));
+        _all.Add(new PaletteCommand("Quit Notro", Glyphs.Close, () => Application.Current.Shutdown(), null, "exit"));
         Filter("");
 
         Query.TextChanged += (_, _) => Filter(Query.Text);

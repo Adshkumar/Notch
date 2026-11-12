@@ -1,19 +1,19 @@
-# Notch privacy policy
+# Notro privacy policy
 
 _Last updated: 6 October 2026_
 
-Notch is a desktop app for Windows that shows a notch-style panel at the top of your screen. It's built and
-maintained by Adarsh Kumar. This policy explains what Notch does with your information. The short version:
-**Notch has no accounts, no ads, no analytics and no telemetry. Your data stays on your PC.**
+Notro is a desktop app for Windows that shows a notch-style panel at the top of your screen. It's built and
+maintained by Adarsh Kumar. This policy explains what Notro does with your information. The short version:
+**Notro has no accounts, no ads, no analytics and no telemetry. Your data stays on your PC.**
 
-## What Notch stores, and where
+## What Notro stores, and where
 
-Everything Notch keeps is saved in a folder on your own PC (`%APPDATA%\Notch`, or the app's private
+Everything Notro keeps is saved in a folder on your own PC (`%APPDATA%\Notch`, retained from the previous app name so upgrades keep your data, or the app's private
 folder when installed from the Microsoft Store). Nothing in it is uploaded anywhere. It holds:
 
 - **Your settings**, including layout, theme and your list of cities.
 - **Clipboard history**, if you leave it on: text and images you copy. Copies from password managers are
-  never recorded. Notch respects the markers Windows uses for sensitive clipboard content, and skips apps
+  never recorded. Notro respects the markers Windows uses for sensitive clipboard content, and skips apps
   like KeePass, 1Password and Bitwarden. You can turn history off, clear it, or exclude more apps.
 - **Notes, reminders, the file shelf list, launcher pins and snippets** you create.
 - **Screen time**: how long each app was in front today, for the Screen time card. You can turn it off in
@@ -24,34 +24,34 @@ folder when installed from the Microsoft Store). Nothing in it is uploaded anywh
 
 Uninstalling the Store version removes this folder. For the zip version, you can delete the folder yourself.
 
-## What Notch reads on your PC
+## What Notro reads on your PC
 
-To work, Notch reads some things locally. None of it is stored beyond what's listed above, or sent anywhere:
+To work, Notro reads some things locally. None of it is stored beyond what's listed above, or sent anywhere:
 
-- **Keyboard:** Notch listens for the volume and Caps Lock keys to show on-screen indicators. It doesn't
+- **Keyboard:** Notro listens for the volume and Caps Lock keys to show on-screen indicators. It doesn't
   record what you type. The optional keystroke display for presentations is off by default, never shows
   keys typed into password fields, and doesn't save anything.
 - **Media and audio:** what's playing (title, artist, album art) from Windows' media controls, and your
   audio devices and per-app volume, for the music and sound features.
 - **Windows and desktops:** the titles and positions of open windows, and which virtual desktop they're on,
   for the Desktops tab.
-- **Camera and microphone status:** Notch shows a dot while another app uses your camera or microphone.
+- **Camera and microphone status:** Notro shows a dot while another app uses your camera or microphone.
   The camera image itself is only used for the optional camera mirror and teleprompter, while they're open.
   Nothing is recorded.
 - **Bluetooth devices and battery levels**, for the Bluetooth and battery cards.
-- **AI coding tool logs:** if you use Claude Code or Codex, Notch reads their usage logs on your PC to show
+- **AI coding tool logs:** if you use Claude Code or Codex, Notro reads their usage logs on your PC to show
   token counts and limits.
 - **Other apps' notifications** (Microsoft Store version only, and only after you allow it when Windows
-  asks): Notch reads the notifications in Windows' notification centre to show them in the notch. They're
+  asks): Notro reads the notifications in Windows' notification centre to show them in the notch. They're
   kept in memory while shown and never saved or sent anywhere. You can hide message text, mute apps, or turn
   the feature off in Settings, and withdraw access in Windows Settings › Privacy & security › Notifications.
 - **Files you give it:** files you drop on the shelf or open in the Documents tab are converted or edited on
   your PC, with Microsoft Word or LibreOffice when they're installed.
 
-## When Notch connects to the internet
+## When Notro connects to the internet
 
-Notch only goes online for features that need it. Each one sends the minimum it needs, directly to the
-service named. Notch has no server of its own, and nothing goes through one.
+Notro only goes online for features that need it. Each one sends the minimum it needs, directly to the
+service named. Notro has no server of its own, and nothing goes through one.
 
 | Feature | Service | What's sent | On by default? |
 |---|---|---|---|
@@ -64,17 +64,17 @@ service named. Notch has no server of its own, and nothing goes through one.
 | Web search | Your browser opens the search engine you pick | Your search, sent by your browser | Only when you search |
 | Saving a video from a link | yt-dlp, if you installed it | The link you give it | Only when you use it |
 
-These services have their own privacy policies. Notch doesn't add any identifiers to these requests.
+These services have their own privacy policies. Notro doesn't add any identifiers to these requests.
 
-Notch also has a **developer API** for scripts and coding tools. It's off by default and, when switched
+Notro also has a **developer API** for scripts and coding tools. It's off by default and, when switched
 on, it only listens on your own PC (`127.0.0.1`). Other devices on your network can't reach it.
 
-## What Notch doesn't do
+## What Notro doesn't do
 
 - No account or sign-in.
 - No analytics, tracking, advertising or telemetry.
 - No selling or sharing of your data with anyone.
-- No data collected from children. Notch isn't aimed at children, and doesn't collect personal data from
+- No data collected from children. Notro isn't aimed at children, and doesn't collect personal data from
   anyone.
 
 ## Changes
@@ -84,4 +84,4 @@ If this policy changes, the new version will be published here, with a new date 
 ## Contact
 
 Questions or concerns: contact the developer.
-Notch is open source, so you can also check everything above in the code.
+Notro is open source, so you can also check everything above in the code.

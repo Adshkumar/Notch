@@ -11,17 +11,17 @@
     <LangVersion>latest</LangVersion>
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
     <ApplicationManifest>app.manifest</ApplicationManifest>
-    <!-- The app is called Notch; the code namespaces keep their original "Notchify" name. -->
-    <AssemblyName>Notch</AssemblyName>
+    <!-- Keep the existing code namespace while branding the application as Notro. -->
+    <AssemblyName>Notro</AssemblyName>
     <RootNamespace>Notchify</RootNamespace>
     <Version>0.4.0</Version>
-    <Product>Notch</Product>
-    <AssemblyTitle>Notch</AssemblyTitle>
+    <Product>Notro</Product>
+    <AssemblyTitle>Notro</AssemblyTitle>
     <Authors>Adarsh Kumar</Authors>
     <Company>Adarsh Kumar</Company>
     <Copyright>© 2026 Adarsh Kumar</Copyright>
     <Description>An open-source, fully customizable Dynamic-Island style notch for Windows.</Description>
-    <ApplicationIcon>Assets\Notch.ico</ApplicationIcon>
+    <ApplicationIcon>Assets\Notro.ico</ApplicationIcon>
     <!-- Lets the project compile on macOS/Linux CI. It only runs on Windows. -->
     <EnableWindowsTargeting>true</EnableWindowsTargeting>
     <NoWarn>$(NoWarn);CA1416;NU1701</NoWarn>
@@ -34,8 +34,8 @@
   </ItemGroup>
 
   <ItemGroup>
-    <Resource Include="Assets\Notch.ico" />
-    <Resource Include="Assets\Notch-256.png" />
+    <Resource Include="Assets\Notro.ico" />
+    <Resource Include="Assets\Notro-256.png" />
   </ItemGroup>
 
   <ItemGroup>

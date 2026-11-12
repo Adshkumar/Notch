@@ -39,16 +39,18 @@
     <Duration x:Key="SlowDuration">0:0:0.22</Duration>
     <CubicEase x:Key="EaseOut" EasingMode="EaseOut" />
 
-    <!-- Liquid-glass sheen: a soft top highlight and a hairline rim. Opacity driven by GlassIntensity. -->
+    <!-- A restrained specular wash and edge glint; strength is controlled by GlassIntensity. -->
     <LinearGradientBrush x:Key="GlassSheenBrush" StartPoint="0,0" EndPoint="0,1">
-        <GradientStop Color="#26FFFFFF" Offset="0" />
-        <GradientStop Color="#08FFFFFF" Offset="0.35" />
+        <GradientStop Color="#42FFFFFF" Offset="0" />
+        <GradientStop Color="#1CFFFFFF" Offset="0.08" />
+        <GradientStop Color="#06FFFFFF" Offset="0.38" />
         <GradientStop Color="#00FFFFFF" Offset="1" />
     </LinearGradientBrush>
     <LinearGradientBrush x:Key="GlassRimBrush" StartPoint="0,0" EndPoint="0,1">
-        <GradientStop Color="#00FFFFFF" Offset="0" />
-        <GradientStop Color="#1FFFFFFF" Offset="0.6" />
-        <GradientStop Color="#40FFFFFF" Offset="1" />
+        <GradientStop Color="#70FFFFFF" Offset="0" />
+        <GradientStop Color="#26FFFFFF" Offset="0.12" />
+        <GradientStop Color="#10FFFFFF" Offset="0.72" />
+        <GradientStop Color="#52FFFFFF" Offset="1" />
     </LinearGradientBrush>
 
     <FontFamily x:Key="IconFont">Segoe Fluent Icons, Segoe MDL2 Assets</FontFamily>

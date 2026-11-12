@@ -43,7 +43,7 @@ public sealed class NotificationsModule : NotchModule
     private static readonly Dictionary<string, ImageSource?> IconCache = new();
     private UserNotificationListener? _listener;
     private bool _polling;
-    // The first read only learns what's already there, so starting Notch doesn't replay old notifications.
+    // The first read only learns what's already there, so starting Notro doesn't replay old notifications.
     private bool _primed;
 
     public NotificationsModule() => _poll.Tick += async (_, _) => await PollAsync();
@@ -114,9 +114,9 @@ public sealed class NotificationsModule : NotchModule
 
     public static string AccessText(NotificationAccess access) => access switch
     {
-        NotificationAccess.NotPackaged => "Windows only lets apps from the Microsoft Store read notifications. Install Notch from the Store to use this.",
-        NotificationAccess.Denied => "Notch isn't allowed to read notifications. Turn on Notification access for Notch in Windows Settings › Privacy & security › Notifications.",
-        NotificationAccess.Error => "Windows didn't let Notch read notifications.",
+        NotificationAccess.NotPackaged => "Windows only lets apps from the Microsoft Store read notifications. Install Notro from the Store to use this.",
+        NotificationAccess.Denied => "Notro isn't allowed to read notifications. Turn on Notification access for Notro in Windows Settings › Privacy & security › Notifications.",
+        NotificationAccess.Error => "Windows didn't let Notro read notifications.",
         NotificationAccess.Off => "Notifications are switched off in Settings › Features.",
         _ => "Reading notifications from Windows' notification centre. They stay on this PC.",
     };
