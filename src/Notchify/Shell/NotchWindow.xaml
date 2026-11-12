@@ -121,6 +121,11 @@
 
                     <!-- Collapsed: live activities side by side -->
                     <Grid x:Name="CompactLayer">
+                        <TextBlock x:Name="CircleGlyph" Style="{StaticResource Icon}" FontSize="15"
+                                   HorizontalAlignment="Center" VerticalAlignment="Center" Visibility="Collapsed" />
+                        <Path x:Name="ShapeDetails" Stroke="{DynamicResource AccentBrush}" StrokeThickness="1.25"
+                              StrokeStartLineCap="Round" StrokeEndLineCap="Round" StrokeLineJoin="Round"
+                              Stretch="None" IsHitTestVisible="False" Visibility="Collapsed" />
                         <ItemsControl x:Name="ActivityStrip" HorizontalAlignment="Center" VerticalAlignment="Center" Margin="8,0">
                             <ItemsControl.ItemsPanel>
                                 <ItemsPanelTemplate>

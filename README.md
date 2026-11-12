@@ -64,10 +64,10 @@ This project was **inspired by [Notch](https://notchy.dev) for macOS**, but it i
 - **Pop out any tab** into its own floating window — always on top, or pinned to the desktop like a widget.
 - **Hidden from screen capture** with one switch — invisible in OBS, Zoom, Teams and screenshots.
 - **Hides while a game or video is fullscreen.**
-- **Any display** — choose the monitor, notch or floating-pill style, and an offset below a taskbar or bezel.
+- **Any display** — choose the monitor, notch or floating-pill style, drag the pill to reposition it (hold `Alt` when it is open), and reset it to the top center with one click.
 
 ### Make it yours
-- **Size & shape** — width and height (closed and open), corner radius.
+- **Size & shape** — width and height (closed and open), corner radius, and sixteen closed-notch styles, including Squircle, Oval, Soft square, Top capsule, Monitor and Mouse.
 - **Themes** — Graphite, Midnight, Aurora, Ember, Lime, Rose or Pure black in one click; everything stays adjustable.
 - **Colours** — solid black, any colour, a gradient, or your own picture; accent colour, and a separate tab-highlight colour and strength.
 - **Frosted glass** — optional live blur of what's behind the open notch, with tint and a sheen-and-rim highlight.
@@ -237,7 +237,7 @@ Settings are grouped by page. Most changes apply immediately and are saved autom
 | **Terminal** | Show or hide Windows Terminal and choose drop-down or normal-window mode. |
 | **Cuely** | Teleprompter speed, text size, and mirroring. |
 | **Windows & Spaces** | Window snapping and virtual-desktop actions. |
-| **Displays** | Target display, top offset, fullscreen behavior, and external-monitor brightness. |
+| **Displays** | Target display, horizontal position, top offset, fullscreen behavior, and external-monitor brightness. |
 | **Battery** | Charging, full-charge and low-battery alerts, and low-battery sound. |
 | **Connectivity** | Bluetooth/AirPods alerts, audio-output alerts, and USB drive alerts. |
 | **Caffeine** | Keep the PC awake indefinitely or for a duration, keep the display on, and low-battery auto-off. |

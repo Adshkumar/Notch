@@ -115,7 +115,7 @@ public sealed class CuelySettings
 
 public sealed class AppearanceSettings
 {
-    /// <summary>"Notch" hugs the top edge with square top corners; "Pill" floats with fully rounded corners.</summary>
+    /// <summary>The closed-notch shape, including basic, geometric and developer-themed styles.</summary>
     public string Style { get; set; } = "Notch";
     public double CollapsedWidth { get; set; } = 190;
     public double CollapsedHeight { get; set; } = 32;
@@ -123,6 +123,8 @@ public sealed class AppearanceSettings
     public double ExpandedHeight { get; set; } = 300;
     public double CornerRadius { get; set; } = 18;
     public double TopOffset { get; set; } = 0;
+    /// <summary>Horizontal shift from the center of the selected display, in device-independent pixels.</summary>
+    public double HorizontalOffset { get; set; } = 0;
     public string AccentColor { get; set; } = "#FF0A84FF";
     public string BackgroundColor { get; set; } = "#F2000000";
     /// <summary>Glass sheen intensity, 0 (flat black) to 1.</summary>

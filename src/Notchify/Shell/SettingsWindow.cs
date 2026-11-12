@@ -428,8 +428,10 @@ public sealed class SettingsWindow : Window
             Header("Theme", "One click sets the background, gradient and accent together. Fine-tune them further down."),
             ThemeSwatches(() => { PreviewExpanded(); RefreshPage(); }),
             Header("Size & shape", "Drag the sliders — the notch updates live."),
-            Choice("Style", new[] { "Notch", "Pill" }, () => a.Style, v => a.Style = v, hint: "Notch hugs the top edge; Pill floats with round corners"),
-            Slide("Collapsed width (length)", 100, 400, () => a.CollapsedWidth, v => a.CollapsedWidth = v),
+            Choice("Style", new[] { "Notch", "Pill", "Capsule", "Circle", "Square", "Top round", "Cut corners", "Hexagon", "Diamond", "Ticket", "Soft square", "Squircle", "Oval", "Top capsule", "Monitor", "Mouse" }, () => a.Style, v => a.Style = v,
+                hint: "Includes developer silhouettes: Monitor and Mouse"),
+            Slide("Collapsed width (length)", 100, 400, () => a.CollapsedWidth, v => a.CollapsedWidth = v,
+                hint: "Sets the width of most styles; Circle uses the height as its diameter, while Monitor and Mouse scale with height"),
             Slide("Collapsed height", 20, 48, () => a.CollapsedHeight, v => a.CollapsedHeight = v),
             Slide("Open width", 460, 1400, () => a.ExpandedWidth, v => a.ExpandedWidth = v, after: PreviewExpanded),
             Slide("Open height", 180, 700, () => a.ExpandedHeight, v => a.ExpandedHeight = v, after: PreviewExpanded, hint: "Taller = bigger Home cards"),
@@ -1096,7 +1098,15 @@ public sealed class SettingsWindow : Window
             Header("Where the notch lives"),
             Choice("Display", options, () => a.DisplayIndex.ToString(), v => a.DisplayIndex = int.Parse(v)),
             list,
-            Slide("Offset from top", 0, 60, () => a.TopOffset, v => a.TopOffset = v, hint: "Push the pill below a taskbar or bezel"),
+            Slide("Horizontal position", -2000, 2000, () => a.HorizontalOffset, v => a.HorizontalOffset = v,
+                hint: "Drag the closed pill left or right, or use this slider. It stays centered until you move it."),
+            Slide("Offset from top", 0, 2000, () => a.TopOffset, v => a.TopOffset = v, hint: "Drag the pill up or down, or adjust its distance from the top edge"),
+            Buttons(Chip("Center notch", (_, _) =>
+            {
+                a.HorizontalOffset = 0;
+                a.TopOffset = 0;
+                Changed();
+            }, Glyphs.Monitor)),
             Toggle("Hide the pill while an app is fullscreen", () => S.Behavior.HideInFullscreen, v => S.Behavior.HideInFullscreen = v),
             Header("Brightness", Notch.Brightness.HasInternalPanel ? "Built-in screen found." : Notch.Brightness.HasExternal ? "Your monitor answers over DDC/CI." : "No adjustable display found — turn on DDC/CI in your monitor's on-screen menu."),
             Toggle("Also control external monitors over DDC/CI", () => S.Huds.ExternalMonitorBrightness, v => S.Huds.ExternalMonitorBrightness = v,

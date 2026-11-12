@@ -21,7 +21,7 @@ How each feature from the macOS app maps to Windows, and where it lives in the c
 | **Calendar** | 🟡 | Google / Outlook / Exchange / iCloud via secret iCal links (no OAuth app needed). Join buttons for Zoom/Meet/Teams. | `Services/CalendarService.cs` |
 | **Camera Mirror** | ✅ | Local preview, never recorded. | `Modules/CuelyModule.cs` |
 | **Native & light** | 🟡 | C#/WPF on .NET 8 (the Windows counterpart to SwiftUI). Timers only run while something is visible. | — |
-| **Liquid Glass UI, resizable panel** | ✅ | Real frosted glass: a click-through window under the pill, clipped to its shape, blurs what's behind (falls back to a solid fill when Windows transparency effects are off). Tint, sheen/rim, solid / gradient / picture backgrounds, text size, open and collapsed size, corner radius — all live-preview. | `Shell/GlassBackdrop.cs`, `Shell/NotchWindow.xaml.cs`, `Shell/SettingsWindow.cs` |
+| **Liquid Glass UI, resizable panel** | ✅ | Real frosted glass: a click-through window under the pill, clipped to its shape, blurs what's behind (falls back to a solid fill when Windows transparency effects are off). Tint, sheen/rim, solid / gradient / picture backgrounds, text size, open and collapsed size, corner radius, and sixteen closed-notch shapes — all live-preview. | `Shell/GlassBackdrop.cs`, `Shell/NotchWindow.xaml.cs`, `Shell/SettingsWindow.cs` |
 | **Documents** | 🟡 | Word / Excel / PowerPoint → PDF and PDF → Word through Microsoft Word (COM) when installed, else LibreOffice headless. Built-in PDF editor (PDFsharp): reorder, rotate, delete, merge, extract, split, text / watermark / page numbers, password. Editing the existing text inside a PDF isn't supported — convert to Word for that. | `Modules/DocumentsModule.cs`, `Services/DocumentService.cs`, `Services/PdfEditSession.cs` |
 | **Screen capture** | ✅ | Built-in region capture on every monitor; copies to the clipboard, stages on the shelf, optional folder and shortcut. Snipping Tool mode available. | `Services/ScreenCaptureService.cs` |
 | **Customisable layout** | ✅ | ✎ in the notch header (or right-click › Edit layout): drag tabs and Home widgets to reorder, eye to hide. Hidden tabs keep their feature running. Also in Settings › Features and › Appearance. | `Core/LayoutEditor.cs`, `Views/HomeView.xaml.cs` |
@@ -75,5 +75,5 @@ How each feature from the macOS app maps to Windows, and where it lives in the c
 | **Drift-free Stopwatch** | ✅ | Wall-clock based; costs nothing while hidden. | `Modules/TimerModule.cs` |
 | **Gestures & Hover Open** | ✅ | Hover to open, auto-collapse, scroll/two-finger swipe to switch tabs, scroll on the pill for volume. Each switchable. | `Shell/NotchWindow.xaml.cs` |
 | **Hidden from Screen Capture** | ✅ | One switch (uses `WDA_EXCLUDEFROMCAPTURE`). | `Shell/NotchWindow.xaml.cs` |
-| **Pill on any display** | ✅ | Notch or floating pill, size, offset, target display, hide in fullscreen. | `Core/Settings.cs` |
+| **Pill on any display** | ✅ | Notch or floating pill, size, drag-to-position, center reset, target display, hide in fullscreen. | `Core/Settings.cs` |
 | **Timer Mascots** | ✅ | 🐢 🐇 🐱 🦊 🐧 🚀 🍅 | `Modules/TimerModule.cs` |

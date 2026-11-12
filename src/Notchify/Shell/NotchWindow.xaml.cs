@@ -39,6 +39,12 @@ public partial class NotchWindow : Window, INotchShell
     private Brush _collapsedBrush = Brushes.Black;
     private Brush _panelBrush = Brushes.Black;
     private bool? _pinnedBeforeEdit;
+    private int? _movePressX;
+    private int? _movePressY;
+    private double _moveStartOffset;
+    private double _moveStartTopOffset;
+    private bool _movingPill;
+    private bool _moveRequiresAlt;
 
     public NotchWindow()
     {
@@ -53,8 +59,12 @@ public partial class NotchWindow : Window, INotchShell
 
         Pill.MouseEnter += Pill_MouseEnter;
         Pill.MouseLeave += Pill_MouseLeave;
+        Pill.PreviewMouseLeftButtonDown += Pill_PreviewMouseLeftButtonDown;
+        Pill.PreviewMouseMove += Pill_PreviewMouseMove;
+        Pill.PreviewMouseLeftButtonUp += Pill_PreviewMouseLeftButtonUp;
         Pill.MouseLeftButtonUp += Pill_Click;
         Pill.MouseWheel += Pill_MouseWheel;
+        Pill.ToolTip = "Drag to reposition; if open, hold Alt while dragging";
         Pill.DragEnter += Pill_DragEnter;
         Pill.Drop += Pill_Drop;
         Pill.SizeChanged += (_, _) => { UpdateClip(); UpdateGlass(); };
@@ -148,8 +158,8 @@ public partial class NotchWindow : Window, INotchShell
 
     [DllImport("shcore.dll")] private static extern int GetDpiForMonitor(IntPtr hmon, int type, out uint dpiX, out uint dpiY);
 
-    /// <summary>Place the (transparent) window centred at the top of the chosen display.</summary>
-    private void PositionWindow()
+    /// <summary>Place the transparent window around the pill on the chosen display.</summary>
+    private void PositionWindow(bool updateGlass = true)
     {
         if (_hwnd == IntPtr.Zero) return;
         _positioning = true;
@@ -164,16 +174,29 @@ public partial class NotchWindow : Window, INotchShell
 
             var wDip = Math.Max(a.ExpandedWidth, 460) + 60;
             // + room for up to three extra rows of wrapped tabs (empty window pixels are click-through).
-            var hDip = Math.Max(a.ExpandedHeight, 180) + a.TopOffset + 40 + 140;
+            var hDip = Math.Max(a.ExpandedHeight, 180) + 40 + 140;
             var wPx = (int)(wDip * scale);
             var hPx = (int)(hDip * scale);
-            Native.SetWindowPos(_hwnd, Native.HWND_TOPMOST, b.Left + (b.Width - wPx) / 2, b.Top, wPx, hPx, Native.SWP_NOACTIVATE);
+            var collapsedWidth = CollapsedShapeWidth(a);
+            var maxOffsetDip = Math.Max(0, (b.Width / scale - collapsedWidth) / 2);
+            var offsetPx = (int)Math.Round(Math.Clamp(a.HorizontalOffset, -maxOffsetDip, maxOffsetDip) * scale);
+            var x = b.Left + (b.Width - wPx) / 2 + offsetPx;
+            var y = b.Top + (int)Math.Round(a.TopOffset * scale);
+            Native.SetWindowPos(_hwnd, Native.HWND_TOPMOST, x, y, wPx, hPx, Native.SWP_NOACTIVATE);
             Width = wDip;
             Height = hDip;
         }
         finally { _positioning = false; }
-        UpdateGlass();
+        if (updateGlass) UpdateGlass();
     }
+
+    private static double CollapsedShapeWidth(AppearanceSettings appearance) => appearance.Style switch
+    {
+        "Circle" => appearance.CollapsedHeight,
+        "Monitor" => Math.Min(appearance.CollapsedWidth, appearance.CollapsedHeight * 2.1),
+        "Mouse" => appearance.CollapsedHeight * 0.78,
+        _ => appearance.CollapsedWidth,
+    };
 
     private void EnsureTopmost()
     {
@@ -199,7 +222,7 @@ public partial class NotchWindow : Window, INotchShell
         ApplyTabTint(a);
         Sheen.Opacity = Math.Clamp(a.GlassIntensity, 0, 1);
         Rim.Opacity = Math.Clamp(a.GlassIntensity, 0, 1);
-        PillHost.Margin = new Thickness(0, a.TopOffset, 0, 0);
+        PillHost.Margin = new Thickness(0);
 
         // Fill: the collapsed pill stays a solid notch colour; the open notch and islands get the chosen
         // background, made translucent over a live blur when glass is on and Windows allows it.
@@ -448,23 +471,57 @@ public partial class NotchWindow : Window, INotchShell
                 }
                 break;
             default:
-                ActivityStrip.Measure(new Size(double.PositiveInfinity, double.PositiveInfinity));
-                var content = ActivityStrip.DesiredSize.Width + 28;
-                w = Math.Max(a.CollapsedWidth, content);
                 h = a.CollapsedHeight;
+                var circle = a.Style == "Circle";
+                var deviceShape = a.Style is "Monitor" or "Mouse";
+                ActivityStrip.Visibility = circle || deviceShape ? Visibility.Collapsed : Visibility.Visible;
+                CircleGlyph.Visibility = circle ? Visibility.Visible : Visibility.Collapsed;
+                ShapeDetails.Visibility = deviceShape ? Visibility.Visible : Visibility.Collapsed;
+                ShapeDetails.Width = deviceShape ? CollapsedShapeWidth(a) : 0;
+                ShapeDetails.Height = deviceShape ? h : 0;
+                if (circle)
+                {
+                    CircleGlyph.Text = Notch.Hub.Activities.FirstOrDefault()?.Glyph ?? Glyphs.Apps;
+                    w = h;
+                }
+                else if (deviceShape)
+                {
+                    w = CollapsedShapeWidth(a);
+                    ShapeDetails.Data = BuildShapeDetails(a.Style, w, h);
+                }
+                else
+                {
+                    ShapeDetails.Data = null;
+                    ActivityStrip.Measure(new Size(double.PositiveInfinity, double.PositiveInfinity));
+                    var content = ActivityStrip.DesiredSize.Width + 28;
+                    w = Math.Max(a.CollapsedWidth, content);
+                }
                 break;
         }
         w = Math.Min(w, Width - 20);
         // Ignore sub-pixel jitter from ticking timers so the pill doesn't wobble every second.
-        if (animate && _state == NotchState.Collapsed && Math.Abs(w - _targetW) < 6 && Math.Abs(h - _targetH) < 1) return;
+        var skipAnimation = animate && _state == NotchState.Collapsed && Math.Abs(w - _targetW) < 6 && Math.Abs(h - _targetH) < 1;
         _targetW = w;
         _targetH = h;
 
-        var radius = _state == NotchState.Collapsed ? Math.Min(a.CornerRadius, h / 2) : a.CornerRadius + 8;
-        Pill.CornerRadius = a.Style == "Pill" ? new CornerRadius(radius) : new CornerRadius(0, 0, radius, radius);
+        var radius = _state == NotchState.Collapsed
+            ? a.Style is "Circle" or "Capsule" or "Top capsule" ? h / 2
+                    : a.Style == "Soft square" ? Math.Min(a.CornerRadius, h * 0.22)
+                    : Math.Min(a.CornerRadius, h / 2)
+            : a.Style == "Square" ? 0 : a.CornerRadius + 8;
+        var customCollapsedShape = _state == NotchState.Collapsed &&
+            a.Style is "Cut corners" or "Hexagon" or "Diamond" or "Ticket" or "Oval" or "Squircle" or "Monitor" or "Mouse";
+        Pill.CornerRadius = customCollapsedShape || a.Style == "Square"
+            ? new CornerRadius(0)
+            : a.Style == "Notch"
+                ? new CornerRadius(0, 0, radius, radius)
+                    : a.Style is "Top round" or "Top capsule" && _state == NotchState.Collapsed
+                    ? new CornerRadius(radius, radius, 0, 0)
+                    : new CornerRadius(radius);
         UpdateClip();
         UpdateGlass();
 
+        if (skipAnimation) return;
         if (!animate || !a.AnimationsEnabled)
         {
             Pill.BeginAnimation(WidthProperty, null);
@@ -486,6 +543,124 @@ public partial class NotchWindow : Window, INotchShell
     {
         var w = Pill.ActualWidth; var h = Pill.ActualHeight;
         if (w <= 0 || h <= 0) return;
+        var style = SettingsStore.Current.Appearance.Style;
+        if (_state == NotchState.Collapsed && style is "Cut corners" or "Hexagon" or "Diamond" or "Ticket" or "Oval" or "Squircle" or "Monitor" or "Mouse")
+        {
+            if (style is "Oval" or "Mouse")
+            {
+                var oval = new EllipseGeometry(new Rect(0, 0, w, h));
+                Pill.Clip = oval;
+                PillContent.Clip = oval;
+                ShadowHost.Clip = null;
+                return;
+            }
+
+            if (style == "Squircle")
+            {
+                var squircleRadius = Math.Min(Math.Min(w, h) * 0.42, Math.Max(6, SettingsStore.Current.Appearance.CornerRadius));
+                const double control = 0.45;
+                var squircle = new StreamGeometry();
+                using (var ctx = squircle.Open())
+                {
+                    ctx.BeginFigure(new Point(squircleRadius, 0), true, true);
+                    ctx.LineTo(new Point(w - squircleRadius, 0), true, false);
+                    ctx.BezierTo(new Point(w - squircleRadius * control, 0), new Point(w, squircleRadius * control), new Point(w, squircleRadius), true, false);
+                    ctx.LineTo(new Point(w, h - squircleRadius), true, false);
+                    ctx.BezierTo(new Point(w, h - squircleRadius * control), new Point(w - squircleRadius * control, h), new Point(w - squircleRadius, h), true, false);
+                    ctx.LineTo(new Point(squircleRadius, h), true, false);
+                    ctx.BezierTo(new Point(squircleRadius * control, h), new Point(0, h - squircleRadius * control), new Point(0, h - squircleRadius), true, false);
+                    ctx.LineTo(new Point(0, squircleRadius), true, false);
+                    ctx.BezierTo(new Point(0, squircleRadius * control), new Point(squircleRadius * control, 0), new Point(squircleRadius, 0), true, false);
+                }
+                squircle.Freeze();
+                Pill.Clip = squircle;
+                PillContent.Clip = squircle;
+                ShadowHost.Clip = null;
+                return;
+            }
+
+            var cut = Math.Min(12, Math.Min(w, h) / 3);
+            Point[] points;
+            if (style == "Hexagon")
+            {
+                points = new[]
+                {
+                    new Point(w * 0.25, 0), new Point(w * 0.75, 0), new Point(w, h / 2),
+                    new Point(w * 0.75, h), new Point(w * 0.25, h), new Point(0, h / 2),
+                };
+            }
+            else if (style == "Diamond")
+            {
+                points = new[]
+                {
+                    new Point(w / 2, 0), new Point(w, h / 2), new Point(w / 2, h), new Point(0, h / 2),
+                };
+            }
+            else if (style == "Ticket")
+            {
+                var notch = Math.Min(8, Math.Min(w, h) / 4);
+                points = new[]
+                {
+                    new Point(0, 0), new Point(w, 0), new Point(w, h * 0.35),
+                    new Point(w - notch, h / 2), new Point(w, h * 0.65), new Point(w, h),
+                    new Point(0, h), new Point(0, h * 0.65), new Point(notch, h / 2), new Point(0, h * 0.35),
+                };
+            }
+            else if (style == "Monitor")
+            {
+                var left = w * 0.06;
+                var right = w * 0.94;
+                var screenBottom = h * 0.65;
+                var corner = Math.Min(2, h * 0.06);
+                var baseRadius = Math.Min(w * 0.04, h * 0.04);
+                var monitor = new StreamGeometry();
+                using (var ctx = monitor.Open())
+                {
+                    ctx.BeginFigure(new Point(left + corner, 0), true, true);
+                    ctx.LineTo(new Point(right - corner, 0), true, false);
+                    ctx.ArcTo(new Point(right, corner), new Size(corner, corner), 0, false, SweepDirection.Clockwise, true, false);
+                    ctx.LineTo(new Point(right, screenBottom), true, false);
+                    ctx.LineTo(new Point(w * 0.56, screenBottom), true, false);
+                    ctx.LineTo(new Point(w * 0.56, h * 0.82), true, false);
+                    ctx.LineTo(new Point(w * 0.72, h * 0.9), true, false);
+                    ctx.LineTo(new Point(w * 0.72, h - baseRadius), true, false);
+                    ctx.ArcTo(new Point(w * 0.72 - baseRadius, h), new Size(baseRadius, baseRadius), 0, false, SweepDirection.Clockwise, true, false);
+                    ctx.LineTo(new Point(w * 0.28 + baseRadius, h), true, false);
+                    ctx.ArcTo(new Point(w * 0.28, h - baseRadius), new Size(baseRadius, baseRadius), 0, false, SweepDirection.Clockwise, true, false);
+                    ctx.LineTo(new Point(w * 0.28, h * 0.9), true, false);
+                    ctx.LineTo(new Point(w * 0.44, h * 0.82), true, false);
+                    ctx.LineTo(new Point(w * 0.44, screenBottom), true, false);
+                    ctx.LineTo(new Point(left, screenBottom), true, false);
+                    ctx.LineTo(new Point(left, corner), true, false);
+                    ctx.ArcTo(new Point(left + corner, 0), new Size(corner, corner), 0, false, SweepDirection.Clockwise, true, false);
+                }
+                monitor.Freeze();
+                Pill.Clip = monitor;
+                PillContent.Clip = monitor;
+                ShadowHost.Clip = null;
+                return;
+            }
+            else
+            {
+                points = new[]
+                {
+                    new Point(cut, 0), new Point(w - cut, 0), new Point(w, cut), new Point(w, h - cut),
+                    new Point(w - cut, h), new Point(cut, h), new Point(0, h - cut), new Point(0, cut),
+                };
+            }
+            var custom = new StreamGeometry();
+            using (var ctx = custom.Open())
+            {
+                ctx.BeginFigure(points[0], true, true);
+                for (var i = 1; i < points.Length; i++) ctx.LineTo(points[i], true, false);
+            }
+            custom.Freeze();
+            Pill.Clip = custom;
+            PillContent.Clip = custom;
+            ShadowHost.Clip = null;
+            return;
+        }
+        Pill.Clip = null;
         var r = Pill.CornerRadius;
         var geo = new StreamGeometry();
         using (var ctx = geo.Open())
@@ -507,6 +682,48 @@ public partial class NotchWindow : Window, INotchShell
         ShadowHost.Clip = _glassActive && _state != NotchState.Collapsed
             ? new CombinedGeometry(GeometryCombineMode.Exclude, new RectangleGeometry(new Rect(-80, -80, w + 160, h + 160)), geo)
             : null;
+    }
+
+    private static Geometry BuildShapeDetails(string style, double w, double h)
+    {
+        var details = new StreamGeometry();
+        using (var ctx = details.Open())
+        {
+            void Line(Point from, Point to)
+            {
+                ctx.BeginFigure(from, false, false);
+                ctx.LineTo(to, true, false);
+            }
+
+            if (style == "Monitor")
+            {
+                ctx.BeginFigure(new Point(w * 0.12, h * 0.1), false, true);
+                ctx.LineTo(new Point(w * 0.88, h * 0.1), true, false);
+                ctx.LineTo(new Point(w * 0.88, h * 0.56), true, false);
+                ctx.LineTo(new Point(w * 0.12, h * 0.56), true, false);
+                ctx.LineTo(new Point(w * 0.12, h * 0.1), true, false);
+            }
+            else if (style == "Mouse")
+            {
+                Line(new Point(w / 2, 0), new Point(w / 2, h * 0.48));
+                Line(new Point(w * 0.42, h * 0.22), new Point(w * 0.58, h * 0.22));
+            }
+            else
+            {
+                Line(new Point(2, h * 0.3), new Point(w - 2, h * 0.3));
+                var midX = w / 2;
+                var midY = h * 0.64;
+                var glyphW = Math.Min(w * 0.12, h * 0.18);
+                var glyphH = h * 0.2;
+                Line(new Point(midX - glyphW, midY - glyphH), new Point(midX - glyphW * 1.8, midY));
+                Line(new Point(midX - glyphW * 1.8, midY), new Point(midX - glyphW, midY + glyphH));
+                Line(new Point(midX + glyphW, midY - glyphH), new Point(midX + glyphW * 1.8, midY));
+                Line(new Point(midX + glyphW * 1.8, midY), new Point(midX + glyphW, midY + glyphH));
+                Line(new Point(midX + glyphW * 0.2, midY - glyphH), new Point(midX - glyphW * 0.2, midY + glyphH));
+            }
+        }
+        details.Freeze();
+        return details;
     }
 
     // ---------------- Islands & activities ----------------
@@ -767,6 +984,67 @@ public partial class NotchWindow : Window, INotchShell
                 if (island.OpenTab != null) OpenTab(island.OpenTab); else { Expand(); Activate(); }
                 break;
         }
+    }
+
+    private void Pill_PreviewMouseLeftButtonDown(object sender, MouseButtonEventArgs e)
+    {
+        var altDown = Keyboard.IsKeyDown(Key.LeftAlt) || Keyboard.IsKeyDown(Key.RightAlt);
+        if (_state != NotchState.Collapsed && !altDown) return;
+        _moveRequiresAlt = _state != NotchState.Collapsed;
+        _movePressX = System.Windows.Forms.Cursor.Position.X;
+        _movePressY = System.Windows.Forms.Cursor.Position.Y;
+        _moveStartOffset = SettingsStore.Current.Appearance.HorizontalOffset;
+        _moveStartTopOffset = SettingsStore.Current.Appearance.TopOffset;
+        _hoverTimer.Stop();
+    }
+
+    private void Pill_PreviewMouseMove(object sender, MouseEventArgs e)
+    {
+        if (_movePressX is not int startX || _movePressY is not int startY || e.LeftButton != MouseButtonState.Pressed) return;
+        if (_moveRequiresAlt && !Keyboard.IsKeyDown(Key.LeftAlt) && !Keyboard.IsKeyDown(Key.RightAlt))
+        {
+            _movePressX = null;
+            _movePressY = null;
+            return;
+        }
+
+        var scale = PresentationSource.FromVisual(Pill)?.CompositionTarget?.TransformToDevice.M11 ?? 1.0;
+        var cursor = System.Windows.Forms.Cursor.Position;
+        var deltaX = (cursor.X - startX) / scale;
+        var deltaY = (cursor.Y - startY) / scale;
+        if (!_movingPill &&
+            Math.Abs(deltaX) < SystemParameters.MinimumHorizontalDragDistance &&
+            Math.Abs(deltaY) < SystemParameters.MinimumVerticalDragDistance) return;
+
+        if (!_movingPill)
+        {
+            _movingPill = true;
+            _collapseTimer.Stop();
+            Mouse.Capture(Pill);
+            if (_glassActive) _glass.Hide();
+        }
+
+        var appearance = SettingsStore.Current.Appearance;
+        appearance.HorizontalOffset = Math.Clamp(_moveStartOffset + deltaX, -2000, 2000);
+        var screens = System.Windows.Forms.Screen.AllScreens;
+        var display = appearance.DisplayIndex >= 0 && appearance.DisplayIndex < screens.Length
+            ? screens[appearance.DisplayIndex]
+            : System.Windows.Forms.Screen.PrimaryScreen ?? screens[0];
+        var maxTopOffset = Math.Max(0, display.Bounds.Height / scale - appearance.CollapsedHeight);
+        appearance.TopOffset = Math.Clamp(_moveStartTopOffset + deltaY, 0, maxTopOffset);
+        PositionWindow(updateGlass: false);
+    }
+
+    private void Pill_PreviewMouseLeftButtonUp(object sender, MouseButtonEventArgs e)
+    {
+        _movePressX = null;
+        _movePressY = null;
+        if (!_movingPill) return;
+
+        _movingPill = false;
+        e.Handled = true;
+        Mouse.Capture(null);
+        SettingsStore.NotifyChanged();
     }
 
     private void Pill_MouseWheel(object sender, MouseWheelEventArgs e)
